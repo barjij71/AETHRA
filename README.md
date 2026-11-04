@@ -19,13 +19,10 @@ The project is being designed around an independent core that owns task executio
 - No mandatory paid API or subscription for core operation; hosted model usage may have provider-specific costs and limits.
 - No claims of completion without reproducible build/test evidence.
 
-## Documentation
+## Architecture
 
-- [Architecture decisions](docs/architecture/DECISIONS.md)
-- [Open-source project comparison](docs/research/PROJECT_COMPARISON.md)
-- [Delivery roadmap](docs/roadmap/PHASES.md)
-- [Security and execution model](docs/security/EXECUTION_MODEL.md)
+- [Skill collaboration and orchestration](docs/architecture/SKILL_ORCHESTRATION.md) — proposed Core-owned workflow DAG, typed artifact handoffs, policy gates, approvals, verification, and external skill adapters.
 
 ## Development status
 
-Implementation has not yet started. The documents above describe intended architecture and planned work, not shipped capabilities.
+The repository is currently in architecture and foundation work. The skill orchestration document is a design specification, not a claim that the runtime has been implemented.
