@@ -10,10 +10,13 @@ This roadmap separates architecture decisions from implemented and verified capa
 - [ ] Confirm application package structure, build toolchain, and supported Android versions.
 
 ## Phase 1 — Minimal Android buildable shell
-- [ ] Create a native Android project (Kotlin + Jetpack Compose is the leading candidate).
-- [ ] Add Gradle wrapper and reproducible CI build.
-- [ ] Add a minimal home/chat shell, navigation, RTL-ready layouts, and accessibility basics.
-- [ ] Add unit-test infrastructure and a build/test evidence report.
+- [x] Create the minimal native Android project shell (Kotlin + Jetpack Compose).
+- [ ] Add the Gradle Wrapper; the initial CI currently installs a pinned Gradle distribution directly.
+- [x] Add an initial GitHub Actions build/test/lint workflow (first run pending).
+- [x] Add a minimal Arabic home placeholder.
+- [ ] Add navigation, RTL verification, and accessibility tests.
+- [x] Add basic unit-test task and CI test step.
+- [ ] Add substantive core tests and a build/test evidence report.
 - [ ] Do not add root or Linux execution yet.
 
 Exit criteria: clean checkout builds in CI; tests pass; debug APK is generated; no secrets or large model downloads are required.
