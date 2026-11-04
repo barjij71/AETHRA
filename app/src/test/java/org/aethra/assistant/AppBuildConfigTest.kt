@@ -6,29 +6,31 @@ import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
 /**
- * Verifies the app's build identity is wired correctly in [android.sourceSets].
+ * Verifies the debug build type is wired into [BuildConfig] the way the
+ * build scripts declare (see [app/src/main/java/org/aethra/assistant/MainActivity.kt]
+ * and [build.gradle.kts] in the same module).
  *
- * This is a thin guard against the manifest, [app/build.gradle.kts], and
- * [build.gradle.kts] drifting out of sync. It is intentionally small and does
- * not touch any Android framework code, so it runs in the standard JVM test
- * harness with no device required.
+ * BuildConfig is generated per variant, so these assertions pin down that the
+ * debug variant applies its documented applicationIdSuffix and versionNameSuffix.
  */
 @RunWith(JUnit4::class)
 class AppBuildConfigTest {
 
     @Test
-    fun applicationIdMatchesNamespace() {
-        assertEquals("Namespace and applicationId must agree so the package",
-            "org.aethra.assistant", BuildConfig.APPLICATION_ID)
+    fun debugVariantAppliesApplicationIdSuffix() {
+        assertEquals("debug build type must append .debug to the applicationId",
+            "org.aethra.assistant.debug", BuildConfig.APPLICATION_ID)
     }
 
     @Test
-    fun versionNameMatchesManifestAndBuildScript() {
-        assertEquals("0.1.0", BuildConfig.VERSION_NAME)
+    fun debugVariantAppliesVersionNameSuffix() {
+        assertEquals("debug build type must append -debug to the versionName",
+            "0.1.0-debug", BuildConfig.VERSION_NAME)
     }
 
     @Test
     fun versionCodeIsOneForFirstRelease() {
-        assertEquals(1, BuildConfig.VERSION_CODE)
+        assertEquals("versionCode is shared across build types, no suffix here",
+            1, BuildConfig.VERSION_CODE)
     }
 }
