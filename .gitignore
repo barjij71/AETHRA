@@ -1,0 +1,15 @@
+# Built application files
+*.apk
+*.ap_
+*/build
+
+# Gradle build cache
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Log files
+*.log
+
+# OS / editor
+.DS_Store
+*.iml
