@@ -8,7 +8,7 @@ AETHRA owns task planning and state, memory, permission checks, skills/tools, pr
 
 ## A-002 — Android-first native application
 
-Build the primary user experience as a native Android app. Windows integration is optional and later. The initial implementation language/UI framework should be confirmed during the bootstrap spike; Kotlin + Jetpack Compose is the leading candidate because the product requires deep Android integration.
+Build the primary user experience as a native Android app. The initial shell uses Kotlin + Jetpack Compose. Windows integration is optional and later. The initial build configuration currently targets API 36 with minSdk 29; the minimum version remains provisional until device/API compatibility requirements are finalized.
 
 ## A-003 — Hybrid Linux runtime
 
