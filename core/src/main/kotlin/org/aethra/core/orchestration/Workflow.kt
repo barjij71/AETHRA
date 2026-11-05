@@ -21,6 +21,7 @@ class WorkflowValidator(private val registry: SkillRegistry) {
             if (registry.get(step.skillId)?.manifest?.enabled != true) errors += "skill " + step.skillId + " is not enabled"
             if (step.dependsOn.any { it !in stepIds }) errors += "step " + step.id + " has missing dependency"
             if (step.dependsOn.contains(step.id)) errors += "step " + step.id + " depends on itself"
+            if (step.inputArtifactIds.any { it.isBlank() }) errors += "step " + step.id + " has blank artifact reference"
         }
         if (hasCycle(workflow.steps)) errors += "workflow contains a dependency cycle"
         return errors
