@@ -3,51 +3,68 @@ package org.aethra.assistant
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import kotlinx.coroutines.launch
+import org.aethra.assistant.AthraHomePage
+import org.aethra.assistant.aethra.runtime.createRuntime
+import org.aethra.assistant.aethra.runtime.Runtime
+
+private val Night = Color(0xFF070B14)
+private val Panel = Color(0xFF111A2A)
+private val Cyan = Color(0xFF67E8F9)
+private val Violet = Color(0xFF9B8CFF)
+private val Muted = Color(0xFF9AAAC0)
+
+private val AethraColors = darkColorScheme(
+    primary = Cyan,
+    secondary = Violet,
+    background = Night,
+    surface = Panel,
+    onPrimary = Color(0xFF061018),
+    onBackground = Color(0xFFEAF2FF),
+    onSurface = Color(0xFFEAF2FF)
+)
+
+class MainActivity : ComponentActivity() {
+    private var runtime: Runtime? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Wire the Android Runtime on launch: create the runtime, start its lifecycle.
+        runtime = createRuntime(this).build().apply {
+            start()
+        }
+        setContent {
+            MaterialTheme(colorScheme = AethraColors) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                    AethraApp()
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Graceful shutdown on exit.
+        runtime?.shutdown()
+    }
+}
+
+@Composable
+private fun AthraApp() {
+    // The runtime is bound on the host Activity; this composable consumes it.
+    AthraHomePage(runtime)
+}
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
