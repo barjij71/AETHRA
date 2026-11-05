@@ -26,13 +26,13 @@ class SkillOrchestrationAcceptanceTest {
                 }
                 "b" -> {
                     seen += "b"
-                    assertTrue(inputs.isEmpty() || inputs.all { it.producerSkillId == "a" })
+                    assertEquals("a", inputs.single().producerSkillId)
                     val out = Artifact(schemaVersion="1", producerSkillId="b", producerVersion="1.0.0", taskId="t1", value=mapOf("n" to 2), provenance="test")
                     store.put(out); StepResult(StepResult.Status.SUCCEEDED, out)
                 }
                 else -> {
                     seen += "c"
-                    assertTrue(inputs.isEmpty() || inputs.all { it.producerSkillId == "b" })
+                    assertEquals("b", inputs.single().producerSkillId)
                     StepResult(StepResult.Status.SUCCEEDED)
                 }
             }
