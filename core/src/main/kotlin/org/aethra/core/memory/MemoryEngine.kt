@@ -112,7 +112,4 @@ class MemoryEngine(private val storage: Storage) {
     val size: Int get() = entries.size
 
     fun close() = scope.cancel()
-
-    private fun String.split(q: String): List<String> = if (q.isEmpty()) emptyList() else listOf(q)
-    private val Qualifier get() = " "
 }
