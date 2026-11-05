@@ -54,7 +54,12 @@ class Orchestrator(
             while (remaining.isNotEmpty() || active.isNotEmpty()) {
                 remaining.filter { step ->
                     step.dependsOn.any { dep ->
-                        results[dep]?.status in setOf(StepResult.Status.FAILED, StepResult.Status.BLOCKED, StepResult.Status.CANCELLED, StepResult.Status.UNKNOWN_OUTCOME)
+                        results[dep]?.status in setOf(
+                            StepResult.Status.FAILED,
+                            StepResult.Status.BLOCKED,
+                            StepResult.Status.CANCELLED,
+                            StepResult.Status.UNKNOWN_OUTCOME
+                        )
                     }
                 }.forEach { step ->
                     results[step.id] = StepResult(StepResult.Status.BLOCKED, reason = "dependency failed")
@@ -66,25 +71,44 @@ class Orchestrator(
                         candidate.dependsOn.all { results[it]?.status == StepResult.Status.SUCCEEDED }
                     } ?: break
                     remaining.remove(step)
+
                     active[step.id] = async {
                         if (!policy.allows(step.skillId, "execute", step.inputArtifactIds)) {
                             return@async StepResult(StepResult.Status.BLOCKED, reason = "blocked by core policy")
                         }
-                        val inputs = step.inputArtifactIds.mapNotNull(artifactStore::get)
-                        if (inputs.size != step.inputArtifactIds.size) {
+
+                        val dependencyInputs = step.dependsOn.mapNotNull { dep -> results[dep]?.output }
+                        val explicitInputs = step.inputArtifactIds.mapNotNull(artifactStore::get)
+                        if (explicitInputs.size != step.inputArtifactIds.size) {
                             return@async StepResult(StepResult.Status.BLOCKED, reason = "missing required artifact")
                         }
-                        runCatching { withTimeout(30.seconds) { executor.execute(step, inputs) } }
-                            .getOrElse { StepResult(StepResult.Status.FAILED, reason = it.message ?: "execution error") }
+                        val inputs = (dependencyInputs + explicitInputs).distinctBy { it.id }
+                        runCatching {
+                            withTimeout(30.seconds) { executor.execute(step, inputs) }
+                        }.getOrElse {
+                            StepResult(StepResult.Status.FAILED, reason = it.message ?: "execution error")
+                        }
                     }
                 }
 
                 if (active.isNotEmpty()) {
                     val completed = active.entries.firstOrNull { it.value.isCompleted }
-                    if (completed != null) results[completed.key] = active.remove(completed.key)!!.await()
-                    else delay(5)
+                    if (completed != null) {
+                        val result = active.remove(completed.key)!!.await()
+                        if (result.status == StepResult.Status.SUCCEEDED && result.output != null) {
+                            artifactStore.put(result.output)
+                        }
+                        results[completed.key] = result
+                    } else {
+                        delay(5)
+                    }
                 } else if (remaining.isNotEmpty()) {
-                    remaining.forEach { results[it.id] = StepResult(StepResult.Status.BLOCKED, reason = "dependency graph cannot make progress") }
+                    remaining.forEach {
+                        results[it.id] = StepResult(
+                            StepResult.Status.BLOCKED,
+                            reason = "dependency graph cannot make progress"
+                        )
+                    }
                     remaining.clear()
                 }
             }
