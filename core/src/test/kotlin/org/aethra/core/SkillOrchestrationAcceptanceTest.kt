@@ -12,9 +12,11 @@ class SkillOrchestrationAcceptanceTest {
     @Test fun manifestValidationRejectsInvalid() {
         assertFalse(SkillManifestValidator.validate(skill("BAD ID", false)).valid)
     }
-\n    @Test fun manifestSchemaIsJsonObject() {
+
+    @Test fun manifestSchemaIsJsonObject() {
         assertTrue(SkillManifestValidator.schema().containsKey("properties"))
-    }\n
+    }
+
     @Test fun threeSkillsExchangeTypedArtifacts() = runTest {
         val registry = SkillRegistry()
         listOf("a","b","c").forEach { registry.register(skill(it)); registry.setTrust(it, TrustState.TRUSTED); registry.enable(it) }
