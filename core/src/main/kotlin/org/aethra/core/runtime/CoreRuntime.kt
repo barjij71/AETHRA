@@ -7,10 +7,14 @@ import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
 import org.aethra.core.storage.Storage
 import org.aethra.core.task.TaskEngine
+import org.aethra.core.task.ProviderTaskRunner
 import org.aethra.core.task.TaskScheduler
 import org.aethra.core.task.TaskPersistence
 import org.aethra.core.tools.ToolRegistry
 import org.aethra.core.providers.ProviderSystem
+import org.aethra.core.providers.ProviderRegistry
+import org.aethra.core.providers.ModelRegistry
+import org.aethra.core.providers.ProviderModelRouter
 import org.aethra.core.skills.SkillRegistry
 
 /** Runtime configuration for the AETHRA core. */
@@ -44,7 +48,6 @@ data class Health(
 class CoreRegistry(
     val config: CoreConfig,
     val storage: Storage,
-    val taskEngine: TaskEngine,
     val memoryEngine: MemoryEngine,
     val toolRegistry: ToolRegistry,
     val providerSystem: ProviderSystem,
@@ -53,8 +56,23 @@ class CoreRegistry(
     val eventBus: CoreEventBus,
     val lifecycle: Lifecycle,
     val auditLog: AuditLog,
-    val permissionBroker: PermissionBroker
+    val permissionBroker: PermissionBroker,
+    val providerRegistry: ProviderRegistry,
+    val modelRegistry: ModelRegistry,
+    val providerModelRouter: ProviderModelRouter
 ) {
+    /** Core-owned task execution: Task → ProviderModelRouter → LanguageModelProvider → Result. */
+    val taskEngine = TaskEngine(
+        storage = storage,
+        eventBus = eventBus,
+        runner = ProviderTaskRunner(
+            router = providerModelRouter,
+            providerRegistry = providerRegistry,
+            auditLog = auditLog
+        ),
+        maxConcurrent = config.maxConcurrentTasks
+    )
+
     fun get(name: String): Any? = when (name) {
         "config" -> config
         "storage" -> storage
@@ -68,6 +86,9 @@ class CoreRegistry(
         "lifecycle" -> lifecycle
         "auditLog" -> auditLog
         "permissionBroker" -> permissionBroker
+        "providerRegistry" -> providerRegistry
+        "modelRegistry" -> modelRegistry
+        "providerModelRouter" -> providerModelRouter
         else -> null
     }
 }
