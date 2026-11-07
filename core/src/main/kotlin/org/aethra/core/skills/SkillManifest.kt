@@ -26,7 +26,7 @@ data class SkillManifest(
 data class ManifestValidation(val valid: Boolean, val errors: List<String>)
 
 object SkillManifestValidator {
-    private val idPattern = Regex("^[a-z0-9][a-z0-9._-]{1,63}$")
+    private val idPattern = Regex("^[a-z0-9][a-z0-9._-]{0,63}$")
     private val versionPattern = Regex("^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
 
     fun validate(manifest: SkillManifest): ManifestValidation {
