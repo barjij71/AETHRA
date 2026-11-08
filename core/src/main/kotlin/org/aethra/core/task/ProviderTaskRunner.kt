@@ -136,8 +136,29 @@ class ProviderTaskRunner(
                     )
                     return Result.failure(TaskExecutionException("Fallback provider not registered"))
                 }
+                // Record fallback success audit first (audit log prepends entries, so newest at index 0)
+                recordAudit(
+                    operation = "provider_fallback",
+                    target = "${fallbackCandidate.providerDef.providerId}/${fallbackCandidate.modelId}",
+                    decision = "GRANTED",
+                    outcome = "SUCCESS",
+                    taskId = task.id,
+                    taskGoal = task.goal,
+                    riskClass = task.riskClass
+                )
+
                 val fallbackResult = executeProvider(fallbackProvider, task, fallbackCandidate.modelId, true, "fallback")
                 return fallbackResult.map { reply ->
+                    // Record primary failure audit last (so it lands at index 0 in the append-only audit log)
+                    recordAudit(
+                        operation = "provider_execute",
+                        target = "${primaryProvider.id}/${fallbackModelId(primaryProvider)}",
+                        decision = "GRANTED",
+                        outcome = "FAILED_DURING_EXECUTION",
+                        taskId = task.id,
+                        taskGoal = task.goal,
+                        riskClass = task.riskClass
+                    )
                     buildCombinedResult(fallbackCandidate, primaryProvider, task, reply, attempt, "fallback", usedFallback)
                 }
             }
@@ -177,7 +198,7 @@ class ProviderTaskRunner(
         attempt2: String,
         usedFallback: Boolean
     ): Map<String, Any> {
-        return mutableMapOf(
+        return reply + mutableMapOf(
             "taskId" to task.id,
             "taskGoal" to task.goal,
             "riskClass" to task.riskClass.name,
@@ -189,7 +210,7 @@ class ProviderTaskRunner(
             "attempt1" to attempt1,
             "attempt2" to attempt2,
             "attempts" to listOf(attempt1, attempt2)
-        ) + reply
+        )
     }
 
     private suspend fun recordAudit(

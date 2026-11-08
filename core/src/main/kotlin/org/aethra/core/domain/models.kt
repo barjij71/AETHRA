@@ -11,6 +11,8 @@ enum class TaskState {
     QUEUED,
     // Preparing inputs/risk checks
     PREPARING,
+    // Must wait for all dependency tasks to finish successfully
+    WAITING_DEPENDENCY,
     // Approved and about to execute
     APPROVED,
     // Running

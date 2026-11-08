@@ -11,8 +11,12 @@ import java.util.UUID
  */
 object TaskStateMachine {
     private val allowed = mapOf(
-        TaskState.QUEUED to setOf(TaskState.PREPARING),
-        TaskState.PREPARING to setOf(TaskState.APPROVED, TaskState.WAITING_APPROVAL, TaskState.CANCELLED),
+        TaskState.QUEUED to setOf(TaskState.PREPARING, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR),
+        TaskState.PREPARING to setOf(TaskState.WAITING_DEPENDENCY, TaskState.APPROVED, TaskState.WAITING_APPROVAL, TaskState.CANCELLED),
+        // WAITING_DEPENDENCY: blocked until dependencies complete.
+        // On failure/cancellation/error of a dependency, the dependent is
+        // propagated accordingly (cascading failure policy), not allowed to run.
+        TaskState.WAITING_DEPENDENCY to setOf(TaskState.APPROVED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR),
         TaskState.APPROVED to setOf(TaskState.RUNNING, TaskState.CANCELLED),
         TaskState.RUNNING to setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR, TaskState.PAUSED),
         TaskState.PAUSED to setOf(TaskState.RUNNING, TaskState.CANCELLED),

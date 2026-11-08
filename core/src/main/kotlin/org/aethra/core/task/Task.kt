@@ -41,8 +41,18 @@ class Task(
     var note: String = ""
         private set
     var retryBudget: Int = 2
+    var timeoutMs: Long = 30_000
         private set
-
+    var backoffMs: Long = 1000
+        private set
+    var isExecuted: Boolean
+        get() = _executed
+        set(value) { _executed = value }
+    private var _executed = false
+    fun setTimeoutMs(ms: Long) {
+        if (ms < 0) throw IllegalArgumentException("timeoutMs must be >= 0")
+        timeoutMs = ms
+    }
     private var _completed = false
     fun complete() {
         if (_completed) return
