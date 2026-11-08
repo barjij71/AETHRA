@@ -2,6 +2,7 @@ package org.aethra.core.orchestration
 
 import kotlinx.coroutines.*
 import org.aethra.core.policy.PolicyEngine
+import org.aethra.core.policy.RiskTier
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
@@ -43,6 +44,7 @@ class Orchestrator(
     private val maxParallelism: Int = 2
 ) {
     suspend fun run(workflow: Workflow, taskId: String): Map<String, StepResult> {
+        require(maxParallelism > 0) { "maxParallelism must be positive" }
         val validation = WorkflowValidator(registry).validate(workflow)
         require(validation.isEmpty()) { validation.joinToString("; ") }
 
@@ -73,6 +75,21 @@ class Orchestrator(
                     remaining.remove(step)
 
                     active[step.id] = async {
+                        if (step.riskTier >= RiskTier.TIER_2) {
+                            val approvalId = step.approvalId
+                                ?: return@async StepResult(StepResult.Status.BLOCKED, reason = "approval required")
+                            if (!policy.consumeApproval(
+                                    approvalId,
+                                    step.approvalActor,
+                                    "execute",
+                                    step.approvalTarget,
+                                    step.approvalPayload
+                                )
+                            ) {
+                                return@async StepResult(StepResult.Status.BLOCKED, reason = "approval invalid or already used")
+                            }
+                        }
+
                         if (!policy.allows(step.skillId, "execute", step.inputArtifactIds)) {
                             return@async StepResult(StepResult.Status.BLOCKED, reason = "blocked by core policy")
                         }
