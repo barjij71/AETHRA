@@ -1,5 +1,7 @@
 package org.aethra.core
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.aethra.core.orchestration.*
 import org.aethra.core.policy.*
@@ -63,11 +65,59 @@ class SkillOrchestrationAcceptanceTest {
 
     @Test fun approvalIsBoundToExactPayloadAndSingleUse() {
         val policy = CorePolicyEngine()
-        val a = policy.requestApproval("user","install","device","pkg=x",RiskTier.TIER_2)!!
-        assertTrue(policy.consumeApproval(a.id,"user","install","device","pkg=x"))
-        assertFalse(policy.consumeApproval(a.id,"user","install","device","pkg=x"))
-        val b = policy.requestApproval("user","install","device","pkg=x",RiskTier.TIER_2)!!
-        assertFalse(policy.consumeApproval(b.id,"user","install","device","pkg=y"))
+        val a = policy.requestApproval("user","execute","device","pkg=x",RiskTier.TIER_2)!!
+        assertTrue(policy.consumeApproval(a.id,"user","execute","device","pkg=x"))
+        assertFalse(policy.consumeApproval(a.id,"user","execute","device","pkg=x"))
+        val b = policy.requestApproval("user","execute","device","pkg=x",RiskTier.TIER_2)!!
+        assertFalse(policy.consumeApproval(b.id,"user","execute","device","pkg=y"))
+    }
+
+    @Test fun sensitiveWorkflowStepRequiresAndConsumesApproval() = runTest {
+        val registry = SkillRegistry()
+        registry.register(skill("s")); registry.setTrust("s", TrustState.TRUSTED); registry.enable("s")
+        val policy = CorePolicyEngine()
+        val approval = policy.requestApproval("user", "execute", "device-1", "install:pkg=x", RiskTier.TIER_2)!!
+        val executed = mutableListOf<String>()
+        val executor = SkillExecutor { step, _ ->
+            executed += step.id
+            StepResult(StepResult.Status.SUCCEEDED)
+        }
+        val step = WorkflowStep(
+            id = "install",
+            skillId = "s",
+            riskTier = RiskTier.TIER_2,
+            approvalId = approval.id,
+            approvalTarget = "device-1",
+            approvalPayload = "install:pkg=x"
+        )
+        val result = Orchestrator(registry, ArtifactStore(), policy, executor).run(
+            Workflow("t2", listOf(step)),
+            "t2"
+        )
+        assertEquals(StepResult.Status.SUCCEEDED, result["install"]?.status)
+        assertEquals(listOf("install"), executed)
+        assertFalse(policy.consumeApproval(approval.id, "user", "execute", "device-1", "install:pkg=x"))
+    }
+
+    @Test fun parallelIndependentStepsRunConcurrently() = runTest {
+        val registry = SkillRegistry()
+        listOf("a","b").forEach { registry.register(skill(it)); registry.setTrust(it, TrustState.TRUSTED); registry.enable(it) }
+        var running = 0
+        var maxRunning = 0
+        val executor = SkillExecutor { _, _ ->
+            running += 1
+            maxRunning = maxOf(maxRunning, running)
+            delay(40)
+            running -= 1
+            StepResult(StepResult.Status.SUCCEEDED)
+        }
+        val results = Orchestrator(registry, ArtifactStore(), CorePolicyEngine(), executor, maxParallelism = 2).run(
+            Workflow("parallel", listOf(WorkflowStep("a","a"), WorkflowStep("b","b"))),
+            "parallel"
+        )
+        assertEquals(StepResult.Status.SUCCEEDED, results["a"]?.status)
+        assertEquals(StepResult.Status.SUCCEEDED, results["b"]?.status)
+        assertEquals(2, maxRunning)
     }
 
     @Test fun untrustedSkillCannotEnable() {
