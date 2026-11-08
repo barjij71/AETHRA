@@ -1,12 +1,18 @@
 package org.aethra.core.orchestration
 
+import org.aethra.core.policy.RiskTier
 import org.aethra.core.skills.SkillRegistry
 
 data class WorkflowStep(
     val id: String,
     val skillId: String,
     val dependsOn: Set<String> = emptySet(),
-    val inputArtifactIds: Set<String> = emptySet()
+    val inputArtifactIds: Set<String> = emptySet(),
+    val riskTier: RiskTier = RiskTier.TIER_0,
+    val approvalId: String? = null,
+    val approvalActor: String = "user",
+    val approvalTarget: String = "",
+    val approvalPayload: String = ""
 )
 
 data class Workflow(val id: String, val steps: List<WorkflowStep>)
@@ -22,6 +28,9 @@ class WorkflowValidator(private val registry: SkillRegistry) {
             if (step.dependsOn.any { it !in stepIds }) errors += "step " + step.id + " has missing dependency"
             if (step.dependsOn.contains(step.id)) errors += "step " + step.id + " depends on itself"
             if (step.inputArtifactIds.any { it.isBlank() }) errors += "step " + step.id + " has blank artifact reference"
+            if (step.riskTier >= RiskTier.TIER_2 && step.approvalId == null) errors += "step " + step.id + " requires explicit approval"
+            if (step.riskTier >= RiskTier.TIER_2 && step.approvalTarget.isBlank()) errors += "step " + step.id + " requires approval target"
+            if (step.riskTier >= RiskTier.TIER_2 && step.approvalPayload.isBlank()) errors += "step " + step.id + " requires approval payload"
         }
         if (hasCycle(workflow.steps)) errors += "workflow contains a dependency cycle"
         return errors
