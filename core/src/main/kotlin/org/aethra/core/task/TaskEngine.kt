@@ -389,18 +389,62 @@ class TaskEngine(
     }
 
     fun approve(taskId: String, granted: Boolean, reason: String) {
-        val task = tasks[taskId] ?: return
-        if (task.state != TaskState.WAITING_APPROVAL) return
-        if (granted) transition(task, TaskState.APPROVED)
-        else transition(task, TaskState.CANCELLED)
-        persist()
-        eventBus.publish(TaskEvent("approval", System.currentTimeMillis(), task.id, task.state, task.state))
+        val shouldDrain = synchronized(lock) {
+            val task = tasks[taskId] ?: return
+            if (task.state != TaskState.WAITING_APPROVAL) return
+
+            val previous = task.state
+            if (!granted) {
+                transition(task, TaskState.CANCELLED)
+                persist()
+                eventBus.publish(
+                    TaskEvent(
+                        "approval",
+                        System.currentTimeMillis(),
+                        task.id,
+                        previous,
+                        task.state,
+                        mapOf("granted" to "false", "reason" to reason)
+                    )
+                )
+                false
+            } else {
+                transition(task, TaskState.APPROVED)
+                val canStart = running.size < maxConcurrent
+                if (canStart) {
+                    startTaskLocked(task, "approval_granted")
+                } else {
+                    transition(task, TaskState.QUEUED)
+                    enqueue(task)
+                }
+                persist()
+                eventBus.publish(
+                    TaskEvent(
+                        "approval",
+                        System.currentTimeMillis(),
+                        task.id,
+                        previous,
+                        task.state,
+                        mapOf("granted" to "true", "reason" to reason)
+                    )
+                )
+                !canStart
+            }
+        }
+
+        if (shouldDrain) drainQueue()
     }
 
     fun cancel(taskId: String) {
         val wasRunning = synchronized(lock) {
             val task = tasks[taskId] ?: return
-            if (task.state !in setOf(TaskState.RUNNING, TaskState.PAUSED, TaskState.WAITING_APPROVAL, TaskState.QUEUED)) {
+            if (task.state !in setOf(
+                    TaskState.RUNNING,
+                    TaskState.PAUSED,
+                    TaskState.WAITING_APPROVAL,
+                    TaskState.WAITING_DEPENDENCY,
+                    TaskState.QUEUED
+                )) {
                 return
             }
 
