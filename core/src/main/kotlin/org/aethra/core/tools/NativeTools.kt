@@ -91,6 +91,18 @@ class NativeTools {
             timeoutSeconds = 20
         ),
         Tool(
+            id = "memory.remember",
+            description = "Persist a user-provided memory entry locally",
+            category = "memory",
+            requiredCapabilities = listOf("memory.write"),
+            inputSchema = mapOf("text" to "memory text"),
+            outputSchema = mapOf("id" to "memory id", "text" to "stored text"),
+            riskClass = RiskClass.REVERSIBLE,
+            approvalRequired = false,
+            reversible = true,
+            timeoutSeconds = 10
+        ),
+        Tool(
             id = "device.info",
             description = "Read battery, network and device identity",
             category = "system",
