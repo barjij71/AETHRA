@@ -11,6 +11,7 @@ import org.aethra.assistant.aethra.security.ExecutionPolicy
 import org.aethra.assistant.aethra.security.PolicyEngine
 import org.aethra.assistant.aethra.skills.SkillRegistryAndroid
 import org.aethra.assistant.aethra.tools.DeviceInfoTool
+import org.aethra.assistant.aethra.tools.FileReadTool
 import org.aethra.core.agents.AgentEngine
 import org.aethra.core.memory.MemoryEngine
 import org.aethra.core.providers.ModelRegistry
@@ -123,6 +124,7 @@ class PlatformAdapters(private val context: Context) {
 
     fun registerAndroidTools() {
         toolRegistry.register(DeviceInfoTool(context).tool)
+        toolRegistry.register(FileReadTool(context).tool)
     }
 
     inner class AndroidTaskDispatcher(
