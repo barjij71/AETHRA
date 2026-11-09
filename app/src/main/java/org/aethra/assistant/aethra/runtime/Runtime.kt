@@ -4,12 +4,14 @@ import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.aethra.assistant.aethra.adapters.PlatformAdapters
 import org.aethra.assistant.aethra.memory.MemoryAndroid
 import org.aethra.assistant.aethra.skills.SkillRegistryAndroid
 import org.aethra.core.agents.AgentEngine
 import org.aethra.core.domain.RiskClass
+import org.aethra.core.domain.TaskEvent
 import org.aethra.core.runtime.CoreConfig
 import org.aethra.core.runtime.CoreRegistry
 import org.aethra.core.runtime.CoreState
@@ -38,6 +40,7 @@ class Runtime(private val context: Context) {
 
     private var registry: CoreRegistry? = null
     private var adapters: PlatformAdapters? = null
+    private var memoryHookActive = false
 
     fun build(): Runtime = this
 
@@ -72,6 +75,7 @@ class Runtime(private val context: Context) {
             adapters = platform
 
             platform.memoryAndroid.initialize()
+            attachMemoryHook()
 
             val result = platform.lifecycle.start()
             if (result.isSuccess) {
@@ -103,11 +107,45 @@ class Runtime(private val context: Context) {
             registry?.memoryEngine?.close()
             registry = null
             adapters = null
+            memoryHookActive = false
             state = CoreState.STOPPED
             health = Health(false, 0, 0, 0)
             result
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Real end-to-end memory flow: terminal task outcomes from the live
+     * EventBus are recorded through MemoryEngine (create/store -> persist on
+     * storage -> reload via initialize on the next start -> shown by the UI).
+     * No synthetic startup memories are injected: every memory here comes from
+     * an actual task execution result.
+     */
+    private fun attachMemoryHook() {
+        if (memoryHookActive) return
+        val bus = registry?.eventBus
+        val memory = adapters?.memoryAndroid
+        val engine = registry?.taskEngine
+        if (bus == null || memory == null || engine == null) return
+        memoryHookActive = true
+        bus.subscribe(TaskEvent::class.java) { event ->
+            when (event.source) {
+                "execution_completed", "execution_failed", "execution_timeout", "execution_cancelled" -> {
+                    scope.launch {
+                        val goal = engine.getTask(event.taskId)?.goal ?: ""
+                        val reason = event.detail["reason"] ?: "reason unavailable"
+                        val text = if (event.source == "execution_completed") {
+                            "Task completed: " + goal
+                        } else {
+                            "Task failed: " + goal + " - reason: " + reason
+                        }
+                        memory.addTaskResult(event.taskId, text, source = "core")
+                    }
+                }
+                else -> Unit
+            }
         }
     }
 
