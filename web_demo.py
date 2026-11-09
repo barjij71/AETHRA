@@ -271,6 +271,7 @@ def tasks_page():
             </div>
             {% endfor %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+            <button onclick="markAllRead()" style="background:#3498db;color:white;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;margin-left:10px;">Ã˜Â§Ã™Ë†Ã˜Â¶Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â£Ã™Ë†Ã™â€žÃ™Ë†Ã™Å Ã˜Âª Ã˜ÂªÃ˜Â§Ã™â€¡Ã˜Â¡</button>
         </div>
             <script>
             setInterval(function() {
@@ -1817,6 +1818,17 @@ def about_page():
 
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
+        <script>
+            function markAllRead() {
+                fetch('/notifications/mark-all-read', {method: 'POST'})
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        }
+                    });
+            }
+        </script>
     </body>
     </html>
     """, features=[
