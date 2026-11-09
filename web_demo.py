@@ -851,6 +851,77 @@ def create_task_page():
     """, result=result)
 
 
+# ===== ØµÙØ­Ø© Ø¹Ø±Ø¶ Ø§Ù„Ø°Ø§ÙƒØ±Ø© =====
+
+@app.route("/memory")
+def memory_page():
+    """ØµÙØ­Ø© Ø¹Ø±Ø¶ Ø¥Ø¯Ø®Ø§Ù„Ø§Øª Ø§Ù„Ø°Ø§ÙƒØ±Ø©."""
+    memories = []
+    try:
+        from core.integration import aethra as _aethra
+        mem_engine = _aethra.memory_engine
+        for layer in ["conversation", "working", "task", "long_term", "preference"]:
+            entries = mem_engine.list_layer(layer)
+            for e in entries[:5]:  # Ø£ÙˆÙ„ 5 Ù…Ù† ÙƒÙ„ Ø·Ø¨Ù‚Ø©
+                memories.append({
+                    "layer": e.layer,
+                    "key": e.key,
+                    "value": str(e.value)[:100],
+                    "source": e.source,
+                    "confidence": e.confidence,
+                })
+    except Exception as e:
+        memories = []
+        error = str(e)
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ø§Ù„Ø°Ø§ÙƒØ±Ø© - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 10px; text-align: right; border-bottom: 1px solid #ddd; }
+            th { background: #3498db; color: white; }
+            .layer-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; color: white; }
+            .layer-conversation { background: #2196f3; }
+            .layer-working { background: #4caf50; }
+            .layer-task { background: #9c27b0; }
+            .layer-long_term { background: #ff9800; }
+            .layer-preference { background: #795548; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ§  Ø§Ù„Ø°Ø§ÙƒØ±Ø© Ø§Ù„Ø·Ø¨Ù‚Ø§ØªÙŠØ©</h1>
+            {% if memories %}
+            <table>
+                <tr><th>Ø§Ù„Ø·Ø¨Ù‚Ø©</th><th>Ø§Ù„Ù…ÙØªØ§Ø­</th><th>Ø§Ù„Ù‚ÙŠÙ…Ø©</th><th>Ø§Ù„Ù…ØµØ¯Ø±</th><th>Ø§Ù„Ø«Ù‚Ø©</th></tr>
+                {% for m in memories %}
+                <tr>
+                    <td><span class="layer-badge layer-{{ m.layer }}">{{ m.layer }}</span></td>
+                    <td>{{ m.key }}</td>
+                    <td>{{ m.value }}</td>
+                    <td>{{ m.source }}</td>
+                    <td>{{ "%.2f"|format(m.confidence) }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% else %}
+            <p>Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¥Ø¯Ø®Ø§Ù„Ø§Øª Ø°Ø§ÙƒØ±Ø©.</p>
+            {% endif %}
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, memories=memories)
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
