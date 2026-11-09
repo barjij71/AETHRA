@@ -54,7 +54,7 @@ class TaskConcurrencyContractTest {
                 return Result.success(emptyMap())
             }
         }
-        val engine = TaskEngine(TestStorage(), EventBus(), runner, maxConcurrent = 1)
+        val engine = TaskEngine(ConcurrencyTestStorage(), EventBus(), runner, maxConcurrent = 1)
         val first = engine.create("first")
         val second = engine.create("second")
 
@@ -86,5 +86,3 @@ private class ConcurrencyTestStorage : Storage {
     override suspend fun remove(key: String) { data.remove(key) }
     override suspend fun clear() { data.clear() }
 }
-
-private fun TestStorage(): Storage = ConcurrencyTestStorage()
