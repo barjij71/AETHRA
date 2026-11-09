@@ -25,6 +25,8 @@ import org.aethra.core.runtime.LifecycleImpl
 import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
+import org.aethra.core.domain.AuditEntry
+import org.aethra.core.domain.RiskClass
 import org.aethra.core.storage.Storage
 import org.aethra.core.task.Task
 import org.aethra.core.task.TaskEngine
@@ -122,6 +124,7 @@ class PlatformAdapters(private val context: Context) {
 
     val memoryAndroid = MemoryAndroid(memoryEngine)
     val skillRegistryAndroid = SkillRegistryAndroid(skillRegistry)
+    val policyEngine = PolicyEngine()
 
     fun registerAndroidTools() {
         toolRegistry.register(DeviceInfoTool(context).tool)
@@ -139,15 +142,69 @@ class PlatformAdapters(private val context: Context) {
         )
 
         override suspend fun run(task: Task): Result<Map<String, Any>> {
-            val toolId = task.goal.trim()
-            val tool = adapters.toolRegistry.get(toolId)
-            return when (tool?.id) {
-                "device.info" -> DeviceInfoTool(adapters.context).execute()
-                "file.read" -> FileReadTool(adapters.context).execute("")
-                "clipboard.read" -> ClipboardReadTool(adapters.context).execute()
-                null -> providerRunner.run(task)
-                else -> Result.failure(Exception("unsupported local tool id: " + tool.id))
-            }
+            val goal = task.goal.trim()
+            val tool = adapters.toolRegistry.get(goal)
+            if (tool != null) return dispatchTool(tool, task, goal)
+            return providerRunner.run(task)
         }
+
+        private suspend fun dispatchTool(tool: Tool, task: Task, goal: String): Result<Map<String, Any>> {
+            if (!adapters.policyEngine.allows(tool.riskClass, tool)) {
+                adapters.auditLog.record(
+                    entry("tool.policy.reject", task.id, tool.id, tool.riskClass, "DENIED", "policy rejected")
+                )
+                return Result.failure(Exception("policy.reject: " + tool.id))
+            }
+            if (tool.approvalRequired || tool.riskClass.level >= RiskClass.SENSITIVE.level) {
+                adapters.auditLog.record(
+                    entry("tool.permission.request", task.id, tool.id, tool.riskClass, "PENDING", "approval required")
+                )
+                return Result.failure(Exception("permission_required: " + tool.id))
+            }
+            adapters.auditLog.record(
+                entry("tool.execution.grant", task.id, tool.id, tool.riskClass, "GRANTED", "approved")
+            )
+            val result = when (tool.id) {
+                "device.info" -> DeviceInfoTool(adapters.context).execute()
+                "file.read" -> FileReadTool(adapters.context).execute(toolArgs(tool, goal)["path"] ?: "")
+                "clipboard.read" -> ClipboardReadTool(adapters.context).execute()
+                else -> return Result.failure(Exception("tool " + tool.id + " has no Android implementation"))
+            }
+            if (result.isSuccess) {
+                adapters.auditLog.record(
+                    entry("tool.execution.success", task.id, tool.id, tool.riskClass, "GRANTED", "success")
+                )
+            } else {
+                adapters.auditLog.record(
+                    entry(
+                        "tool.execution.failure", task.id, tool.id, tool.riskClass, "DENIED",
+                        result.exceptionOrNull()?.message ?: "execution error"
+                    )
+                )
+            }
+            return result
+        }
+
+        private fun toolArgs(tool: Tool, goal: String): Map<String, String> {
+            val rest = goal.removePrefix(tool.id).trim()
+            return if (rest.isEmpty()) emptyMap() else mapOf("path" to rest)
+        }
+
+        private fun entry(
+            operation: String,
+            target: String,
+            toolId: String,
+            risk: RiskClass,
+            decision: String,
+            outcome: String
+        ): AuditEntry = AuditEntry(
+            id = java.util.UUID.randomUUID().toString(),
+            actor = "aethra.runtime",
+            operation = operation,
+            target = target,
+            riskClass = risk,
+            decision = decision,
+            outcome = outcome
+        )
     }
 }
