@@ -34,6 +34,19 @@ class ToolRegistry {
     /** Get a tool by ID. */
     fun get(id: String): Tool? = tools[id]
 
+    /** Resolve an exact tool ID, explicit alias, or ID-prefixed command. */
+    fun resolve(command: String): Tool? {
+        val normalized = command.trim()
+        if (normalized.isEmpty()) return null
+        tools[normalized]?.let { return it }
+        tools.values.firstOrNull { tool ->
+            tool.aliases.any { alias -> alias.equals(normalized, ignoreCase = true) }
+        }?.let { return it }
+        return tools.values
+            .sortedByDescending { it.id.length }
+            .firstOrNull { normalized.startsWith(it.id + " ") }
+    }
+
     /** List all tools. */
     fun all(): List<Tool> = tools.values.toList()
 
