@@ -27,8 +27,8 @@ class ClipboardReadTool(private val context: Context) {
 
     suspend fun execute(): Result<Map<String, Any>> {
         return try {
-            val cm = context.getSystemService(ClipboardManager::class.java)
-            val text = cm?.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val text = cm?.primaryClip?.getItemAt(0)?.text?.toString()
             Result.success(
                 mapOf(
                     "text" to (text ?: ""),
