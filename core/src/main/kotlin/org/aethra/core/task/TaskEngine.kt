@@ -240,6 +240,17 @@ class TaskEngine(
     private fun wakeTask(task: Task) {
         synchronized(lock) {
             if (task.state != TaskState.WAITING_DEPENDENCY) return
+
+            // Dependency completion must never bypass the same risk/approval gate
+            // used by normal task execution. A sensitive dependent becomes
+            // WAITING_APPROVAL instead of being auto-started by the wake-up path.
+            if (task.riskClass.level >= RiskClass.SENSITIVE.level) {
+                transition(task, TaskState.APPROVED)
+                transition(task, TaskState.WAITING_APPROVAL)
+                persist()
+                return
+            }
+
             if (running.size >= maxConcurrent) {
                 transition(task, TaskState.APPROVED)
                 transition(task, TaskState.QUEUED)
