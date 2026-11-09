@@ -79,7 +79,12 @@ class TaskEngine(
         dependsOn: List<String> = emptyList()
     ): Task {
         val task = Task(goal, role, riskClass, dependsOn)
-        synchronized(lock) { tasks[task.id] = task }
+        synchronized(lock) {
+            require(!TaskScheduler.wouldCreateCycle(task.id, dependsOn) { tasks[it] }) {
+                "Task dependency cycle detected"
+            }
+            tasks[task.id] = task
+        }
         persist()
         registerDependents(task)
         // Tasks with dependencies are not auto-scheduled; they wait for dependencies

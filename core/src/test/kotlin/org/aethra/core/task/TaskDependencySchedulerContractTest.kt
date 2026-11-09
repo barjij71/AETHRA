@@ -214,4 +214,31 @@ class TaskDependencySchedulerContractTest {
         assertFalse(dependent.state == TaskState.RUNNING)
         assertFalse(dependent.isTerminal())
     }
+    @Test
+    fun selfDependencyIsRejectedAsCycle() {
+        val task = Task("self")
+        val tasks = mapOf(task.id to task)
+        assertTrue(TaskScheduler.wouldCreateCycle(task.id, listOf(task.id)) { tasks[it] })
+    }
+
+    @Test
+    fun indirectDependencyCycleIsDetected() {
+        val a = Task("a")
+        val b = Task("b", dependsOn = listOf(a.id))
+        val c = Task("c", dependsOn = listOf(b.id))
+        val tasks = mapOf(a.id to a, b.id to b, c.id to c)
+
+        assertTrue(TaskScheduler.wouldCreateCycle(a.id, listOf(c.id)) { tasks[it] })
+    }
+
+    @Test
+    fun acyclicDependencyGraphRemainsAllowed() {
+        val a = Task("a")
+        val b = Task("b", dependsOn = listOf(a.id))
+        val c = Task("c", dependsOn = listOf(b.id))
+        val tasks = mapOf(a.id to a, b.id to b, c.id to c)
+
+        assertTrue(!TaskScheduler.wouldCreateCycle("new", listOf(c.id)) { tasks[it] })
+    }
+
 }
