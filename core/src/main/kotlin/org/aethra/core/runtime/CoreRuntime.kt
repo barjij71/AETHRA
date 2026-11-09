@@ -59,13 +59,15 @@ class CoreRegistry(
     val permissionBroker: PermissionBroker,
     val providerRegistry: ProviderRegistry,
     val modelRegistry: ModelRegistry,
-    val providerModelRouter: ProviderModelRouter
+    val providerModelRouter: ProviderModelRouter,
+    val taskRunner: TaskRunner? = null
 ) {
-    /** Core-owned task execution: Task → ProviderModelRouter → LanguageModelProvider → Result. */
+    /** Core-owned task execution. A platform may supply a dispatcher that handles
+     * local tools first and delegates provider-backed work when appropriate. */
     val taskEngine = TaskEngine(
         storage = storage,
         eventBus = eventBus,
-        runner = ProviderTaskRunner(
+        runner = taskRunner ?: ProviderTaskRunner(
             router = providerModelRouter,
             providerRegistry = providerRegistry,
             auditLog = auditLog
