@@ -9,10 +9,10 @@ User Request â†’ Plan â†’ Tool â†’ Terminal â†’ Output â†
 from __future__ import annotations
 import time
 import uuid
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from core.integration import aethra
 from core.memory import MemoryEngine
 from core.task import TaskEngine, TaskStatus
 from core.verification import VerificationEngine
@@ -62,25 +62,31 @@ class HermesResponse:
 class HermesAPI:
     """ÙˆØ§Ø¬Ù‡Ø© Hermes Ù„Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ AETHRA Core."""
 
-    def __init__(self) -> None:
-        self.task_engine: TaskEngine = aethra.task_engine
-        self.memory_engine: MemoryEngine = aethra.memory_engine
-        self.verification_engine: VerificationEngine = aethra.verification_engine
-        self.permission_broker: PermissionBroker = aethra.permission_broker
-        self.tool_registry: ToolRegistry = aethra.tool_registry
-        self.tool_dispatcher: ToolDispatcher = aethra.tool_dispatcher
-        self.provider_registry = getattr(aethra, 'provider_registry', None)
-        if self.provider_registry is None:
-            from providers.registry import ProviderRegistry
-            self.provider_registry = ProviderRegistry()
+    def __init__(
+        self,
+        task_engine: Optional[TaskEngine] = None,
+        memory_engine: Optional[MemoryEngine] = None,
+        verification_engine: Optional[VerificationEngine] = None,
+        permission_broker: Optional[PermissionBroker] = None,
+        tool_registry: Optional[ToolRegistry] = None,
+        tool_dispatcher: Optional[ToolDispatcher] = None,
+        provider_registry: Optional[ProviderRegistry] = None,
+    ) -> None:
+        # Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ù…ØªØ£Ø®Ø± Ù„ØªØ¬Ù†Ø¨ Ø§Ù„Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø§Ù„Ø¯ÙˆØ±ÙŠ
+        from core.integration import aethra as _aethra
+        self.task_engine: TaskEngine = task_engine or _aethra.task_engine
+        self.memory_engine: MemoryEngine = memory_engine or _aethra.memory_engine
+        self.verification_engine: VerificationEngine = verification_engine or _aethra.verification_engine
+        self.permission_broker: PermissionBroker = permission_broker or _aethra.permission_broker
+        self.tool_registry: ToolRegistry = tool_registry or _aethra.tool_registry
+        self.tool_dispatcher: ToolDispatcher = tool_dispatcher or _aethra.tool_dispatcher
+        self.provider_registry: ProviderRegistry = provider_registry or (
+            _aethra.provider_registry if hasattr(_aethra, 'provider_registry') else None
+        )
 
         self._messages: List[HermesMessage] = []
         self._steps: Dict[str, List[HermesExecutionStep]] = {}  # conversation_id -> steps
-        self._lock = __import__("threading").RLock()
-
-        # ØªØ³Ø¬ÙŠÙ„ Mock Provider Ø§ÙØªØ±Ø§Ø¶ÙŠ
-        if self.provider_registry:
-            self.provider_registry.register(MockProvider(), is_default=True)
+        self._lock = threading.RLock()
 
     def send_message(self, conversation_id: str, content: str,
                      actor: str = "user") -> HermesResponse:
@@ -289,5 +295,5 @@ class HermesAPI:
         }
 
 
-# instance Ø¹Ø§Ù…Ø©
-hermes_api = HermesAPI()
+# instance Ø¹Ø§Ù…Ø© (Ø³ÙŠØªÙ… ØªÙ‡ÙŠØ¦ØªÙ‡Ø§ Ù…Ù† core.integration)
+hermes_api = None

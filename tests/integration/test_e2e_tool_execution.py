@@ -1,4 +1,8 @@
-"""Ø§Ø®ØªØ¨Ø§Ø± end-to-end: ØªÙ†ÙÙŠØ° Ø£Ø¯Ø§Ø© Ø¹Ø¨Ø± ÙƒØ§Ù…Ù„ Ø§Ù„Ù…Ø³Ø§Ø±."""
+"""Ø§Ø®ØªØ¨Ø§Ø± end-to-end: ØªÙ†ÙÙŠØ° Ø£Ø¯Ø§Ø© Ø¹Ø¨Ø± ÙƒØ§Ù…Ù„ Ø§Ù„Ù…Ø³Ø§Ø±.
+
+Ø§Ù„Ù…Ø³Ø§Ø±:
+Task -> TaskRunner -> ToolDispatcher (Policy/Permission/Approval) -> Executor -> Event -> Audit
+"""
 
 import sys
 import os
@@ -12,20 +16,22 @@ from core.task import TaskStatus
 def test_shell_exec_without_approval_fails():
     task_id = aethra.task_engine.create_task(
         "ls_test", "shell.exec",
-        metadata={"command": "ls /tmp", "actor": "test_user"},
+        params={"command": "ls /tmp"},
+        actor="test_user",
     )
     try:
         aethra.task_runner.run_task(aethra.task_engine.get_task(task_id))
-        assert False, "should fail because shell.exec requires approval"
+        assert False, "ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙØ´Ù„ Ù„Ø£Ù† shell.exec ÙŠØªØ·Ù„Ø¨ Ù…ÙˆØ§ÙÙ‚Ø©"
     except PermissionError as e:
-        assert "approval" in str(e).lower() or "Ù…ÙˆØ§ÙÙ‚" in str(e)
+        assert "Ù…ÙˆØ§ÙÙ‚" in str(e) or "Ù…ÙˆØ§ÙÙ‚Ø©" in str(e)
     print("OK: shell exec without approval fails")
 
 
 def test_shell_exec_with_approval_succeeds():
     task_id = aethra.task_engine.create_task(
         "echo_test", "shell.exec",
-        metadata={"command": "echo hello_aethra", "actor": "test_user"},
+        params={"command": "echo hello_aethra"},
+        actor="test_user",
     )
     task = aethra.task_engine.get_task(task_id)
 
@@ -38,7 +44,7 @@ def test_shell_exec_with_approval_succeeds():
 
     aethra.tool_dispatcher.approve_gate(gate.tool_id, "admin")
 
-    result = aethra.task_runner.run_task(task, gate_id=gate.tool_id)
+    result = aethra.task_runner.run_task(task)
     assert "hello_aethra" in result
     assert task.status == TaskStatus.COMPLETED
     print("OK: shell exec with approval succeeds")
@@ -51,8 +57,10 @@ def test_file_write_and_read():
     try:
         write_task = aethra.task_engine.create_task(
             "write_test", "file.exec",
-            metadata={"tool_id": "file.write", "operation": "write", "path": test_file, "content": "AETHRA test content", "actor": "test_user"},
+            params={"tool_id": "file.write", "operation": "write", "path": test_file, "content": "AETHRA test content"},
+            actor="test_user",
         )
+        write_task.metadata["tool_id"] = "file.write"
 
         gate = aethra.tool_dispatcher.request_execution(
             tool_id="file.write",
@@ -61,13 +69,15 @@ def test_file_write_and_read():
         )
         aethra.tool_dispatcher.approve_gate(gate.tool_id, "admin")
 
-        write_result = aethra.task_runner.run_task(write_task, gate_id=gate.tool_id)
+        write_result = aethra.task_runner.run_task(write_task)
         assert write_result == "ØªÙ… Ø§Ù„ÙƒØªØ§Ø¨Ø© Ø¥Ù„Ù‰ " + test_file
 
         read_task = aethra.task_engine.create_task(
             "read_test", "file.exec",
-            metadata={"tool_id": "file.read", "operation": "read", "path": test_file, "actor": "test_user"},
+            params={"tool_id": "file.read", "operation": "read", "path": test_file},
+            actor="test_user",
         )
+        read_task.metadata["tool_id"] = "file.read"
 
         read_result = aethra.task_runner.run_task(read_task)
         assert "AETHRA test content" in read_result
@@ -82,7 +92,8 @@ def test_event_published_on_execution():
 
     task_id = aethra.task_engine.create_task(
         "event_test", "shell.exec",
-        metadata={"command": "echo event_test", "actor": "test_user"},
+        params={"command": "echo event_test"},
+        actor="test_user",
     )
     task = aethra.task_engine.get_task(task_id)
 
@@ -92,7 +103,7 @@ def test_event_published_on_execution():
         actor="test_user",
     )
     aethra.tool_dispatcher.approve_gate(gate.tool_id, "admin")
-    aethra.task_runner.run_task(task, gate_id=gate.tool_id)
+    aethra.task_runner.run_task(task)
 
     final_count = len(aethra.event_bus.get_history())
     assert final_count > initial_count
@@ -104,4 +115,5 @@ if __name__ == "__main__":
     test_shell_exec_with_approval_succeeds()
     test_file_write_and_read()
     test_event_published_on_execution()
-    print("\n=== E2E tool execution tests PASSED ===")
+    print("
+=== Ø§Ø®ØªØ¨Ø§Ø±Ø§Øª end-to-end Ù„Ù„Ø£Ø¯ÙˆØ§Øª Ù†Ø¬Ø­Øª ===")

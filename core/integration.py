@@ -14,7 +14,6 @@ from core.policy import PermissionBroker
 from core.memory import MemoryEngine
 from core.verification import VerificationEngine
 from core.persistence import PersistenceManager
-from core.eventbus import event_bus
 
 from tools.registry import ToolRegistry
 from tools.dispatcher import ToolDispatcher
@@ -29,7 +28,6 @@ class AETHRAIntegration:
     def __init__(self) -> None:
         self.task_engine = TaskEngine()
         self.permission_broker = PermissionBroker()
-        self.event_bus = event_bus
         self.memory_engine = MemoryEngine()
         self.verification_engine = VerificationEngine()
         self.persistence_manager = PersistenceManager()
@@ -49,10 +47,24 @@ class AETHRAIntegration:
         self.shell_executor = ShellExecutor()
         self.file_executor = FileExecutor()
 
-        # ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ù†ÙØ°ÙŠÙ† ØªØ­Øª Ù…Ø¹Ø±ÙØ§Øª Ø§Ù„Ø£Ø¯ÙˆØ§Øª
+        # hermes_api Ø³ÙŠØªÙ… ØªÙ‡ÙŠØ¦ØªÙ‡ Ø¨Ø¹Ø¯ ØªØ¹Ø±ÙŠÙ aethra ÙÙŠ Ù†Ù‡Ø§ÙŠØ© Ø§Ù„Ù…Ù„Ù
+        self.hermes_api = None
+        self.tool_dispatcher = ToolDispatcher(
+            tool_registry=self.tool_registry,
+            permission_broker=self.permission_broker,
+        )
+        self.task_runner = TaskRunner(
+            task_engine=self.task_engine,
+            tool_registry=self.tool_registry,
+            tool_dispatcher=self.tool_dispatcher,
+            permission_broker=self.permission_broker,
+        )
+
+        self.shell_executor = ShellExecutor()
+        self.file_executor = FileExecutor()
+
         self.tool_dispatcher.register_executor("shell.exec", self.shell_executor.execute)
-        self.tool_dispatcher.register_executor("file.read", self.file_executor.execute)
-        self.tool_dispatcher.register_executor("file.write", self.file_executor.execute)
+        self.tool_dispatcher.register_executor("file.exec", self.file_executor.execute)
 
         from tools.tool import Tool, ToolCategory, ToolRisk
         self.tool_registry.register(Tool(
@@ -95,6 +107,7 @@ class AETHRAIntegration:
         core_registry.register("tool_dispatcher", self.tool_dispatcher)
         core_registry.register("task_runner", self.task_runner)
         core_registry.register("permission_broker", self.permission_broker)
+        core_registry.register("hermes_api", self.hermes_api)
 
     def start(self) -> None:
         core_runtime.start()
@@ -104,3 +117,14 @@ class AETHRAIntegration:
 
 
 aethra = AETHRAIntegration()
+
+# ØªÙ‡ÙŠØ¦Ø© hermes_api Ø¨Ø¹Ø¯ ØªØ¹Ø±ÙŠÙ aethra Ù„ØªØ¬Ù†Ø¨ Ø§Ù„Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø§Ù„Ø¯ÙˆØ±ÙŠ
+from ui.hermes_api import HermesAPI
+aethra.hermes_api = HermesAPI(
+    task_engine=aethra.task_engine,
+    memory_engine=aethra.memory_engine,
+    verification_engine=aethra.verification_engine,
+    permission_broker=aethra.permission_broker,
+    tool_registry=aethra.tool_registry,
+    tool_dispatcher=aethra.tool_dispatcher,
+)
