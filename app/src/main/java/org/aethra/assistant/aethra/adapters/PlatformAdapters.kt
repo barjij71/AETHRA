@@ -220,9 +220,9 @@ class PlatformAdapters(private val context: Context) {
                 entry("tool.execution.grant", task.id, tool.id, tool.riskClass, "GRANTED", "approved")
             )
             val result = when (tool.id) {
-                "device.info" -> DeviceInfoTool(context).execute()
-                "file.read" -> FileReadTool(context).execute(toolArgs(tool, goal)["path"] ?: "")
-                "clipboard.read" -> ClipboardReadTool(context).execute()
+                "device.info" -> DeviceInfoTool(adapters.context).execute()
+                "file.read" -> FileReadTool(adapters.context).execute(toolArgs(tool, goal)["path"] ?: "")
+                "clipboard.read" -> ClipboardReadTool(adapters.context).execute()
                 else -> return Result.failure(Exception(
                     "tool " + tool.id + " is declared but has no Android implementation yet"))
             }
