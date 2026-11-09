@@ -5,15 +5,7 @@ import org.aethra.core.domain.Task
 import org.aethra.core.domain.TaskState
 import java.util.UUID
 
-/**
- * A single unit of work owned by the AETHRA core.
- *
- * Guarantees:
- * - unique id
- * - explicit, auditable state transitions
- * - persistence of the current state
- * - cancellation and retry
- */
+/** A single unit of work owned by the AETHRA core. */
 class Task(
     goal: String,
     role: String = "assistant",
@@ -49,10 +41,12 @@ class Task(
         get() = _executed
         set(value) { _executed = value }
     private var _executed = false
+
     fun setTimeoutMs(ms: Long) {
         if (ms < 0) throw IllegalArgumentException("timeoutMs must be >= 0")
         timeoutMs = ms
     }
+
     private var _completed = false
     fun complete() {
         if (_completed) return
@@ -89,18 +83,59 @@ class Task(
     fun isCancelled(): Boolean = _cancelled
     fun isTerminal(): Boolean = state in setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)
 
-    /** Check whether the transition requested by [to] is allowed from [current]. */
     fun canTransitionTo(to: TaskState): Boolean = TaskStateMachine.canTransition(state, to)
 
-    /**
-     * Update this task's state and record the facts.
-     * Returns true if the transition was applied; false if it was rejected as illegal.
-     */
     fun updateState(to: TaskState, detail: Map<String, String> = this.detail): Boolean {
         if (!canTransitionTo(to)) return false
         this.state = to
         this.updatedAt = System.currentTimeMillis()
         this.detail = detail
         return true
+    }
+
+    /**
+     * Restore durable task state after a process restart.
+     * In-flight execution cannot safely be resumed in-place, so transient execution
+     * states are recovered to QUEUED and will be scheduled again by TaskEngine.
+     */
+    internal fun restore(
+        persistedId: String,
+        persistedCreatedAt: Long,
+        persistedUpdatedAt: Long,
+        persistedState: TaskState,
+        persistedDetail: Map<String, String>,
+        persistedNote: String,
+        persistedRetryBudget: Int,
+        persistedTimeoutMs: Long,
+        persistedBackoffMs: Long,
+        persistedExecuted: Boolean
+    ) {
+        id = persistedId
+        createdAt = persistedCreatedAt
+        updatedAt = persistedUpdatedAt
+        detail = persistedDetail
+        note = persistedNote
+        retryBudget = persistedRetryBudget
+        timeoutMs = persistedTimeoutMs
+        backoffMs = persistedBackoffMs
+
+        when (persistedState) {
+            TaskState.RUNNING,
+            TaskState.PREPARING,
+            TaskState.APPROVED -> {
+                state = TaskState.QUEUED
+                _executed = false
+                _completed = false
+                _failed = false
+                _cancelled = false
+            }
+            else -> {
+                state = persistedState
+                _executed = persistedExecuted
+                _completed = persistedState == TaskState.COMPLETED
+                _failed = persistedState == TaskState.FAILED
+                _cancelled = persistedState == TaskState.CANCELLED
+            }
+        }
     }
 }

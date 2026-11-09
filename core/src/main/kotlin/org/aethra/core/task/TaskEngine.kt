@@ -1,6 +1,8 @@
 package org.aethra.core.task
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.Result
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.domain.TaskState
@@ -30,7 +32,9 @@ class TaskEngine(
     private val lock = Any()
     private val running = LinkedList<Task>()
     private val dependents = HashMap<String, MutableList<String>>()
-    private var persistedVersion = 0L
+    private val persistence = TaskPersistence(storage)
+    private val restored = CompletableDeferred<Unit>()
+    private val persistenceMutex = Mutex()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -39,7 +43,30 @@ class TaskEngine(
     }
 
     private fun load() {
-        // persistence is layered
+        scope.launch {
+            try {
+                val restoredTasks = persistence.loadAll()
+                synchronized(lock) {
+                    for (task in restoredTasks) {
+                        if (!tasks.containsKey(task.id)) {
+                            tasks[task.id] = task
+                            registerDependents(task)
+                        }
+                    }
+                }
+                restored.complete(Unit)
+                // Resume durable work that was queued or in-flight when the process stopped.
+                for (task in restoredTasks) {
+                    when (task.state) {
+                        TaskState.QUEUED -> run(task.id)
+                        TaskState.WAITING_DEPENDENCY -> wakeReadyDependents()
+                        else -> Unit
+                    }
+                }
+            } catch (t: Throwable) {
+                restored.completeExceptionally(t)
+            }
+        }
     }
 
     fun create(
@@ -331,7 +358,12 @@ class TaskEngine(
     val activeCount: Int get() = synchronized(lock) { running.size }
 
     private fun persist() {
-        // Persistence is delegated to the platform Storage implementation
+        scope.launch {
+            restored.await()
+            persistenceMutex.withLock {
+                persistence.saveAll(allTasks())
+            }
+        }
     }
 
     fun close() {
