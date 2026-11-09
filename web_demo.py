@@ -1414,6 +1414,34 @@ def api_health():
     return jsonify(health)
 
 
+# ===== Ù†Ù‚Ø·Ø© Ù†Ù‡Ø§ÙŠØ© Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ù…Ù‡Ù…Ø© =====
+
+@app.route("/tasks/<task_id>/cancel", methods=["POST"])
+def cancel_task(task_id):
+    """Ø¥Ù„ØºØ§Ø¡ Ù…Ù‡Ù…Ø© Ù‚ÙŠØ¯ Ø§Ù„ØªÙ†ÙÙŠØ°."""
+    try:
+        task = _aethra.task_engine.get_task(task_id)
+        if task is None:
+            return jsonify({"success": False, "error": "Ø§Ù„Ù…Ù‡Ù…Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©"}), 404
+        
+        if task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+            return jsonify({"success": False, "error": "Ø§Ù„Ù…Ù‡Ù…Ø© Ø§Ù†ØªÙ‡Øª Ø¨Ø§Ù„ÙØ¹Ù„ ÙˆÙ„Ø§ ÙŠÙ…ÙƒÙ† Ø¥Ù„ØºØ§Ø¤Ù‡Ø§"}), 400
+        
+        task.status = TaskStatus.CANCELLED
+        task.completed_at = __import__("time").time()
+        
+        # Ø¥Ù†Ø´Ø§Ø¡ Ø¥Ø´Ø¹Ø§Ø± Ø¨Ø§Ù„Ø¥Ù„ØºØ§Ø¡
+        _aethra.notification_manager.notify_task_failed(
+            task_id=task_id,
+            task_name=task.name,
+            error="ØªÙ… Ø§Ù„Ø¥Ù„ØºØ§Ø¡ Ù…Ù† Ù‚Ø¨Ù„ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…",
+        )
+        
+        return jsonify({"success": True, "task_id": task_id, "status": "CANCELLED"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
