@@ -19,12 +19,11 @@ import kotlinx.coroutines.runBlocking
  */
 class SkillRegistry(private val storage: Storage) {
     private val skills = LinkedHashMap<String, Skill>()
+    private val lock = Any()
 
     init {
         loadPersisted()
     }
-
-    private val lock = Any()
 
     /** Register a skill. Rejects duplicates. */
     fun register(skill: Skill): Boolean {
@@ -156,7 +155,9 @@ class SkillRegistry(private val storage: Storage) {
                     createdAt = e.createdAt,
                     updatedAt = e.updatedAt
                 )
-                register(skill)
+                synchronized(lock) {
+                    skills[skill.id] = skill
+                }
             }
         } catch (e: Exception) {
             // corrupt/legacy data: start fresh
