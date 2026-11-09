@@ -181,7 +181,7 @@ class TaskEngine(
             // Only terminal-failure (FAILED/CANCELLED/ERROR) propagates failure to dependents.
             // COMPLETED is handled by wakeReadyDependents() separately (by checking isReady).
             if (depState !in setOf(TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)) {
-                return
+                return@forEach
             }
             val childState = when (depState) {
                 TaskState.FAILED -> TaskState.FAILED
