@@ -120,7 +120,7 @@ class TaskEngine(
         // Create the Job before starting it so cancellation/pause can never race
         // with coroutine startup and miss the job handle. A CoroutineStart.LAZY job
         // is inserted into the registry first, then explicitly started.
-        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        val job = scope.launch(start = CoroutineStart.ATOMIC) {
             try {
                 execute(task)
             } finally {
@@ -132,9 +132,9 @@ class TaskEngine(
             }
         }
         jobs[task.id] = job
-        // UNDISPATCHED starts execution immediately until its first suspension,
-        // eliminating the window where the task is RUNNING but its runner has not
-        // yet observed the coroutine and therefore cannot observe cancellation.
+        // ATOMIC guarantees the coroutine begins even if cancellation races with startup,
+        // while still scheduling it asynchronously so run() preserves its RUNNING
+        // contract for fast/synchronous runners.
     }
 
     private fun drainQueue() {
