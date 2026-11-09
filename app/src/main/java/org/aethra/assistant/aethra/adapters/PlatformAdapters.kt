@@ -86,17 +86,19 @@ class PlatformAdapters(private val context: Context) {
     val providerModelRouter = ProviderModelRouter(providerRegistry, modelRegistry)
 
     private val taskRunner: TaskRunner = AndroidTaskDispatcher(this)
-    val taskEngine = TaskEngine(
-        storage = storage,
-        eventBus = eventBus,
-        runner = taskRunner,
-        maxConcurrent = config.maxConcurrentTasks
-    )
+    private lateinit var coreTaskEngine: TaskEngine
+
+    fun bindCoreTaskEngine(taskEngine: TaskEngine) {
+        coreTaskEngine = taskEngine
+    }
 
     val lifecycle: Lifecycle = LifecycleImpl(
         storage = storage,
         config = config,
-        taskEngine = taskEngine,
+        taskEngineProvider = {
+            check(::coreTaskEngine.isInitialized) { "Core task engine must be bound before lifecycle start" }
+            coreTaskEngine
+        },
         memoryEngine = memoryEngine,
         toolRegistry = toolRegistry,
         providerSystem = providerSystem,
