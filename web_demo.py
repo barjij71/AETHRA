@@ -120,8 +120,9 @@ HTML_TEMPLATE = """
 
         <div class="form-group">
             <label>Ø£Ø¯Ø®Ù„ Ø·Ù„Ø¨Ùƒ Ø£Ùˆ Ø£Ù…Ø± Ù†Ø¸Ø§Ù…:</label>
-            <form method="POST" action="/chat">
+            <form method="POST" action="/chat" enctype="multipart/form-data">
                 <input type="text" name="message" placeholder="Ù…Ø«Ø§Ù„: Ù…Ø±Ø­Ø¨Ø§Ù‹ØŒ Ø£Ùˆ /shell echo hello" required>
+                <input type="file" name="file">
                 <button type="send">Ø¥Ø±Ø³Ø§Ù„</button>
             </form>
         </div>
