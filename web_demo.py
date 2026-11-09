@@ -24,6 +24,8 @@ from core.task import TaskStatus
 from devices.notification import notification_manager, NotificationType, NotificationPriority
 from devices.registry import DeviceRegistry
 from devices.android_adapter import AndroidRuntimeAdapter, LinuxAdapter
+from skills.registry import SkillRegistry
+from skills.manifest import SkillManifest
 
 app = Flask(__name__)
 
@@ -593,6 +595,108 @@ def devices_page():
     </body>
     </html>
     """, devices=devices, error=error)
+
+
+# ===== ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…Ù‡Ø§Ø±Ø§Øª =====
+
+@app.route("/skills")
+def skills_page():
+    """ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…Ù‡Ø§Ø±Ø§Øª."""
+    skills = []
+    try:
+        reg = SkillRegistry()
+        # Ø¥Ø¶Ø§ÙØ© Ù…Ù‡Ø§Ø±Ø§Øª ØªØ¬Ø±ÙŠØ¨ÙŠØ© Ù„Ù„Ø¹Ø±Ø¶
+        reg.register(type('Skill', (), {
+            'manifest': type('Manifest', (), {
+                'id': 'skill.shell',
+                'name': 'Ù…Ù‡Ø§Ø±Ø© Ø§Ù„Ù‚Ø´Ø±Ø©',
+                'version': '1.0.0',
+                'description': 'ØªÙ†ÙÙŠØ° Ø£ÙˆØ§Ù…Ø± Ø§Ù„Ù‚Ø´Ø±Ø©',
+                'author': 'AETHRA',
+                'permissions': ['system.shell'],
+                'capabilities': ['shell.exec'],
+                'platforms': ['linux', 'android'],
+                'entrypoint': 'skills/shell/main.py',
+            })(),
+            'state': type('State', (), {'value': 'ENABLED'})(),
+        })())
+        reg.register(type('Skill', (), {
+            'manifest': type('Manifest', (), {
+                'id': 'skill.filesystem',
+                'name': 'Ù…Ù‡Ø§Ø±Ø© Ù†Ø¸Ø§Ù… Ø§Ù„Ù…Ù„ÙØ§Øª',
+                'version': '0.5.0',
+                'description': 'Ù‚Ø±Ø§Ø¡Ø© ÙˆÙƒØªØ§Ø¨Ø© Ø§Ù„Ù…Ù„ÙØ§Øª',
+                'author': 'AETHRA',
+                'permissions': ['file.read', 'file.write'],
+                'capabilities': ['file.read', 'file.write'],
+                'platforms': ['linux', 'windows', 'android'],
+                'entrypoint': 'skills/fs/main.py',
+            })(),
+            'state': type('State', (), {'value': 'INSTALLED'})(),
+        })())
+        skills = reg.list()
+    except Exception as e:
+        skills = []
+        error = str(e)
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ø§Ù„Ù…Ù‡Ø§Ø±Ø§Øª - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .skill { padding: 15px; border-bottom: 1px solid #eee; margin: 10px 0; border-radius: 6px; background: #fff; }
+            .skill:last-child { border-bottom: none; }
+            .skill-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+            .skill-name { font-weight: bold; font-size: 16px; }
+            .skill-version { padding: 4px 8px; border-radius: 4px; font-size: 12px; background: #ecf0f1; color: #2c3e50; }
+            .skill-state { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+            .state-ENABLED { background: #e8f5e9; color: #2e7d32; }
+            .state-INSTALLED { background: #fff3e0; color: #e65100; }
+            .state-DISABLED { background: #ffebee; color: #c62828; }
+            .skill-cap { margin: 5px 0; font-size: 13px; color: #555; }
+            .skill-perm { margin: 5px 0; font-size: 13px; color: #555; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ”§ Ø§Ù„Ù…Ù‡Ø§Ø±Ø§Øª Ø§Ù„Ù…Ø«Ø¨ØªØ©</h1>
+            {% if skills %}
+            {% for s in skills %}
+            <div class="skill">
+                <div class="skill-header">
+                    <span class="skill-name">{{ s.manifest.name }}</span>
+                    <span class="skill-version">v{{ s.manifest.version }}</span>
+                </div>
+                <div class="skill-cap">
+                    <strong>Ø§Ù„ÙˆØµÙ:</strong> {{ s.manifest.description }}
+                </div>
+                <div class="skill-cap">
+                    <strong>Ø§Ù„Ù…Ø¤Ù„Ù:</strong> {{ s.manifest.author }} | 
+                    <strong>Ø§Ù„Ù†Ù‚Ø§Ø·:</strong> {{ s.manifest.platforms | join(', ') }}
+                </div>
+                <div class="skill-perm">
+                    <strong>Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª:</strong> {{ s.manifest.permissions | join(', ') }}
+                </div>
+                <div class="skill-perm">
+                    <strong>Ø§Ù„Ù‚Ø¯Ø±Ø§Øª:</strong> {{ s.manifest.capabilities | join(', ') }}
+                </div>
+                <span class="skill-state state-{{ s.state.value }}">{{ s.state.value }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p>Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù‡Ø§Ø±Ø§Øª Ù…Ø«Ø¨ØªØ©.</p>
+            {% endif %}
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, skills=skills)
 
 
 if __name__ == "__main__":
