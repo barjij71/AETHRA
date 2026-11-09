@@ -290,10 +290,6 @@ class TaskEngine(
             }
 
             val returnedFailure = result?.exceptionOrNull()
-            if (returnedFailure is CancellationException) {
-                // A runner may also report cancellation through Result.failure().
-                return
-            }
             val executionError = returnedFailure ?: failure
 
             if (executionError == null) {
@@ -304,6 +300,29 @@ class TaskEngine(
                     mapOf("reason" to "success", "attempts" to (retriesUsed + 1).toString())
                 ))
                 onTaskTerminal(task.id)
+                // Terminal state must be durable at once; otherwise a process
+                // restart restores RUNNING, Task.restore() maps it back to
+                // QUEUED and an already-finished task executes again.
+                persist()
+                return
+            }
+
+            if (returnedFailure is CancellationException) {
+                // A runner may report cancellation through Result.failure().
+                // That is a terminal outcome, not retryable work: leave the
+                // task terminal instead of lingering as RUNNING with no job
+                // attached (the UI would show a false [RUNNING] forever).
+                val wasTerminal = task.isTerminal()
+                if (!wasTerminal) task.cancel()
+                persist()
+                if (!wasTerminal) {
+                    eventBus.publish(TaskEvent(
+                        "execution_cancelled", System.currentTimeMillis(), task.id,
+                        TaskState.RUNNING, TaskState.CANCELLED,
+                        mapOf("reason" to (returnedFailure.message ?: "runner cancelled"))
+                    ))
+                    onTaskTerminal(task.id)
+                }
                 return
             }
 
@@ -344,6 +363,9 @@ class TaskEngine(
                 )
             ))
             onTaskTerminal(task.id)
+            // Terminal FAILED state must be durable for the same reason as COMPLETED
+            // (see above): restore() recovers RUNNING as a fresh QUEUED execution.
+            persist()
             return
         }
     }
