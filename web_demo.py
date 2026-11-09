@@ -21,10 +21,11 @@ from flask import Flask, render_template_string, request, jsonify, redirect, url
 
 from core.integration import aethra
 from core.task import TaskStatus
+from devices.notification import notification_manager, NotificationType, NotificationPriority
 
 app = Flask(__name__)
 
-# HTML í…œí”ŒÙŠØª Ø¨Ø³ÙŠØ·
+# HTML í…œí”ŒÙŠØª Ù…Ø¹ Ø¯Ø¹Ù… Ø§Ù„Ø¹Ø±Ø¨ÙŠØ© Ø§Ù„ÙƒØ§Ù…Ù„
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -35,33 +36,50 @@ HTML_TEMPLATE = """
     <style>
         * { box-sizing: border-box; }
         body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; direction: rtl; }
-        .container { max-width: 800px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { max-width: 900px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1 { color: #2c3e50; text-align: center; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .nav { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+        .nav a { padding: 8px 16px; background: #3498db; color: white; border-radius: 4px; text-decoration: none; font-size: 14px; }
+        .nav a:hover { background: #2980b9; }
+        .nav a.active { background: #2c3e50; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; color: #34495e; }
-        input[type="text"], textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-        button { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        input[type="text"], textarea, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        button { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px; }
         button:hover { background: #2980b9; }
         button.secondary { background: #95a5a6; }
         button.secondary:hover { background: #7f8c8d; }
+        button.success { background: #27ae60; }
+        button.success:hover { background: #219a52; }
+        button.danger { background: #e74c3c; }
+        button.danger:hover { background: #c0392b; }
         .result { margin-top: 20px; padding: 15px; border-radius: 4px; display: none; }
         .result.success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; display: block; }
         .result.error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; display: block; }
+        .result.info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; display: block; }
         .steps { margin-top: 15px; }
-        .step { padding: 10px; margin: 5px 0; border-radius: 4px; font-size: 13px; }
-        .step.completed { background: #e8f5e9; border-left: 4px solid #4caf50; }
-        .step.failed { background: #ffebee; border-left: 4px solid #f44336; }
-        .step.pending { background: #fff3e0; border-left: 4px solid #ff9800; }
-        .tasks { margin-top: 20px; }
-        .task-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .step { padding: 10px; margin: 5px 0; border-radius: 4px; font-size: 13px; border-left: 4px solid #3498db; }
+        .step.completed { background: #e8f5e9; border-left-color: #4caf50; }
+        .step.failed { background: #ffebee; border-left-color: #f44336; }
+        .step.pending { background: #fff3e0; border-left-color: #ff9800; }
+        .tasks, .notifications { margin-top: 20px; }
+        .task-item, .notif-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
         .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
         .status-QUEUED { background: #fff3e0; color: #e65100; }
         .status-RUNNING { background: #e3f2fd; color: #1565c0; }
         .status-COMPLETED { background: #e8f5e9; color: #2e7d32; }
         .status-FAILED { background: #ffebee; color: #c62828; }
-        .nav { margin-bottom: 20px; }
-        .nav a { margin-right: 15px; text-decoration: none; color: #3498db; }
-        .nav a:hover { text-decoration: underline; }
+        .status-CANCELLED { background: #eceff1; color: #546e7a; }
+        .notif-INFO { border-left: 4px solid #2196f3; }
+        .notif-WARNING { border-left: 4px solid #ff9800; }
+        .notif-ERROR { border-left: 4px solid #f44336; }
+        .notif-SUCCESS { border-left: 4px solid #4caf50; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0; }
+        .stat-card { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #dee2e6; }
+        .stat-card h3 { margin: 0; font-size: 24px; color: #3498db; }
+        .stat-card p { margin: 5px 0 0; color: #666; font-size: 14px; }
+        .back { display: inline-block; margin-top: 20px; color: #3498db; text-decoration: none; }
+        .back:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -71,6 +89,8 @@ HTML_TEMPLATE = """
         <div class="nav">
             <a href="/">Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
             <a href="/tasks">Ø§Ù„Ù…Ù‡Ø§Ù…</a>
+            <a href="/notifications">Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª</a>
+            <a href="/dashboard">Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…</a>
             <a href="/audit">Ø§Ù„ØªØ¯Ù‚ÙŠÙ‚</a>
             <a href="/status">Ø§Ù„Ø­Ø§Ù„Ø©</a>
         </div>
@@ -122,7 +142,7 @@ def index():
     tasks = []
     try:
         all_tasks = aethra.task_engine.list_tasks()
-        tasks = all_tasks[-5:]  # Ø¢Ø®Ø± 5 Ù…Ù‡Ø§Ù…
+        tasks = all_tasks[-5:]
     except Exception:
         pass
     return render_template_string(HTML_TEMPLATE, response=response, tasks=tasks)
@@ -177,10 +197,16 @@ def tasks_page():
         <title>Ø§Ù„Ù…Ù‡Ø§Ù… - AETHRA Demo</title>
         <style>
             body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
-            .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            .container { max-width: 700px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
             h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
-            .task { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
-            .status { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+            .task { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fff; margin: 8px 0; border-radius: 6px; }
+            .task:last-child { border-bottom: none; }
+            .status { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; }
+            .status-QUEUED { background: #fff3e0; color: #e65100; }
+            .status-RUNNING { background: #e3f2fd; color: #1565c0; }
+            .status-COMPLETED { background: #e8f5e9; color: #2e7d32; }
+            .status-FAILED { background: #ffebee; color: #c62828; }
+            .status-CANCELLED { background: #eceff1; color: #546e7a; }
             .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
         </style>
     </head>
@@ -189,7 +215,10 @@ def tasks_page():
             <h1>ðŸ“‹ Ø§Ù„Ù…Ù‡Ø§Ù…</h1>
             {% for t in tasks %}
             <div class="task">
-                <span>{{ t.name }}</span>
+                <div>
+                    <strong>{{ t.name }}</strong><br>
+                    <small>Ø§Ù„Ù…Ø¹Ø±Ù: {{ t.id[:8] }}</small>
+                </div>
                 <span class="status status-{{ t.status }}">{{ t.status }}</span>
             </div>
             {% endfor %}
@@ -198,6 +227,140 @@ def tasks_page():
     </body>
     </html>
     """, tasks=all_tasks)
+
+
+@app.route("/notifications")
+def notifications_page():
+    """ØµÙØ­Ø© Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª."""
+    notifs = notification_manager.get_notifications()
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .notif { padding: 15px; border-bottom: 1px solid #eee; margin: 10px 0; border-radius: 6px; }
+            .notif:last-child { border-bottom: none; }
+            .notif-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+            .notif-title { font-weight: bold; font-size: 16px; }
+            .notif-type { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; color: white; }
+            .notif-message { margin: 8px 0; color: #555; }
+            .notif-meta { font-size: 12px; color: #888; margin-top: 8px; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ”” Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª</h1>
+            {% for n in notifs %}
+            <div class="notif notif-{{ n.type.value }}">
+                <div class="notif-header">
+                    <span class="notif-title">{{ n.title }}</span>
+                    <span class="notif-type">{{ n.type.value }}</span>
+                </div>
+                <div class="notif-message">{{ n.message }}</div>
+                <div class="notif-meta">
+                    Ø§Ù„Ù…ØµØ¯Ø±: {{ n.source }} | Ø§Ù„Ø£ÙˆÙ„ÙˆÙŠØ©: {{ n.priority.value }} | Ø§Ù„ÙˆÙ‚Øª: {{ "%.0f"|format(n.timestamp) }}
+                    {% if n.read %} | âœ“ Ù…Ù‚Ø±ÙˆØ¡{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, notifs=notifs)
+
+
+@app.route("/dashboard")
+def dashboard_page():
+    """ØµÙØ­Ø© Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…."""
+    stats = {}
+    snap = None
+    health = {}
+    try:
+        from core.security_policy import security_policy
+        stats = security_policy.get_stats()
+    except Exception:
+        pass
+    try:
+        from core.monitoring import system_monitor, health_checker
+        snap = system_monitor.get_latest_snapshot()
+        health = health_checker.run_all_checks()
+    except Exception:
+        pass
+    try:
+        notif_stats = notification_manager.get_stats()
+    except Exception:
+        notif_stats = {}
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }
+            .stat-card { background: #e8f4fd; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #bee5eb; }
+            .stat-card h3 { margin: 0; font-size: 28px; color: #2980b9; }
+            .stat-card p { margin: 5px 0 0; color: #666; font-size: 14px; }
+            .metric { background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 10px 0; border-left: 4px solid #3498db; }
+            .health-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+            .health-ok { color: #27ae60; font-weight: bold; }
+            .health-fail { color: #e74c3c; font-weight: bold; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ“Š Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…</h1>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>{{ notif_stats.total if notif_stats else 0 }}</h3>
+                    <p>Ø¥Ø´Ø¹Ø§Ø±Ø§Øª Ø¥Ø¬Ù…Ø§Ù„ÙŠØ©</p>
+                </div>
+                <div class="stat-card">
+                    <h3>{{ notif_stats.unread if notif_stats else 0 }}</h3>
+                    <p>Ø¥Ø´Ø¹Ø§Ø±Ø§Øª ØºÙŠØ± Ù…Ù‚Ø±ÙˆØ¡Ø©</p>
+                </div>
+                <div class="stat-card">
+                    <h3>{{ stats.total_events if stats else 0 }}</h3>
+                    <p>Ø£Ø­Ø¯Ø§Ø« ØªØ¯Ù‚ÙŠÙ‚</p>
+                </div>
+            </div>
+
+            {% if snap %}
+            <h3>Ù…Ø±Ø§Ù‚Ø¨Ø© Ø§Ù„Ù…ÙˆØ§Ø±Ø¯:</h3>
+            <div class="metric"><strong>ÙˆØ­Ø¯Ø© Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©:</strong> {{ snap.cpu_percent }}%</div>
+            <div class="metric"><strong>Ø§Ù„Ø°Ø§ÙƒØ±Ø©:</strong> {{ snap.memory_percent }}% ({{ snap.memory_available_mb }} Ù…ÙŠØ¬Ø§Ø¨Ø§ÙŠØª Ù…ØªØ§Ø­Ø©)</div>
+            <div class="metric"><strong>Ø§Ù„Ù‚Ø±Øµ:</strong> {{ snap.disk_percent }}% ({{ snap.disk_free_gb }} Ø¬ÙŠØ¬Ø§Ø¨Ø§ÙŠØª Ø­Ø±Ø©)</div>
+            {% endif %}
+
+            {% if health %}
+            <h3>ÙØ­ÙˆØµØ§Øª Ø§Ù„ØµØ­Ø©:</h3>
+            {% for name, r in health.items() %}
+            <div class="health-item">
+                <span>{{ name }}</span>
+                <span class="{% if r.healthy %}health-ok{% else %}health-fail{% endif %}">
+                    {% if r.healthy %}Ø³Ù„ÙŠÙ…{% else %}ÙØ´Ù„{% endif %}
+                </span>
+            </div>
+            {% endfor %}
+            {% endif %}
+
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, stats=stats, snap=snap, health=health, notif_stats=notif_stats)
 
 
 @app.route("/audit")
@@ -216,7 +379,7 @@ def audit_page():
         <title>Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„ØªØ¯Ù‚ÙŠÙ‚ - AETHRA Demo</title>
         <style>
             body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
-            .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
             h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 10px; text-align: right; border-bottom: 1px solid #ddd; }
@@ -251,12 +414,10 @@ def status_page():
     """ØµÙØ­Ø© Ø­Ø§Ù„Ø© Ø§Ù„Ù†Ø¸Ø§Ù…."""
     snap = None
     try:
-        from core.monitoring import system_monitor, health_checker
+        from core.monitoring import system_monitor
         snap = system_monitor.get_latest_snapshot()
-        health = health_checker.run_all_checks()
     except Exception:
         snap = None
-        health = {}
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
@@ -267,7 +428,7 @@ def status_page():
             body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
             .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
             h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
-            .metric { background: #e8f4fd; padding: 15px; border-radius: 6px; margin: 10px 0; }
+            .metric { background: #e8f4fd; padding: 15px; border-radius: 6px; margin: 10px 0; border-left: 4px solid #3498db; }
             .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
         </style>
     </head>
