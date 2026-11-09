@@ -350,22 +350,29 @@ class TaskEngine(
     }
 
     fun pause(taskId: String) {
-        val task = tasks[taskId] ?: return
-        if (task.state == TaskState.RUNNING) {
+        synchronized(lock) {
+            val task = tasks[taskId] ?: return
+            if (task.state != TaskState.RUNNING) return
             transition(task, TaskState.PAUSED)
+            task.isExecuted = false
+            jobs[taskId]?.cancel()
+            jobs.remove(taskId)
+            running.remove(taskId)
             persist()
-            eventBus.publish(TaskEvent("pause", System.currentTimeMillis(), task.id, task.state, task.state))
+            eventBus.publish(TaskEvent("pause", System.currentTimeMillis(), task.id, TaskState.RUNNING, TaskState.PAUSED))
         }
+        drainQueue()
     }
 
     fun resume(taskId: String) {
-        val task = tasks[taskId] ?: return
-        if (task.state == TaskState.PAUSED) {
-            transition(task, TaskState.RUNNING)
+        synchronized(lock) {
+            val task = tasks[taskId] ?: return
+            if (task.state != TaskState.PAUSED) return
+            transition(task, TaskState.QUEUED)
             persist()
-            eventBus.publish(TaskEvent("resume", System.currentTimeMillis(), task.id, task.state, task.state))
-            scope.launch { execute(task) }
+            eventBus.publish(TaskEvent("resume", System.currentTimeMillis(), task.id, TaskState.PAUSED, TaskState.QUEUED))
         }
+        run(taskId)
     }
 
     fun retry(taskId: String) {

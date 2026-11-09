@@ -73,6 +73,43 @@ class TaskConcurrencyContractTest {
         assertTrue(calls.indexOf("second") > calls.indexOf("first"))
     }
     @Test
+    fun pausingRunningTaskStopsCurrentExecutionAndResumeStartsFreshCycle() = runBlocking {
+        val calls = mutableListOf<String>()
+        val cancelled = mutableListOf<String>()
+        val runner = object : TaskRunner {
+            override suspend fun run(task: Task): Result<Map<String, Any>> {
+                calls += task.goal
+                try {
+                    delay(5000)
+                    return Result.success(emptyMap())
+                } catch (e: CancellationException) {
+                    cancelled += task.goal
+                    throw e
+                }
+            }
+        }
+        val engine = TaskEngine(ConcurrencyTestStorage(), EventBus(), runner, maxConcurrent = 1)
+        val task = engine.create("pausable")
+        engine.run(task.id)
+        val runningDeadline = System.currentTimeMillis() + 1000
+        while (task.state != TaskState.RUNNING && System.currentTimeMillis() < runningDeadline) delay(10)
+        assertEquals(TaskState.RUNNING, task.state)
+
+        engine.pause(task.id)
+        assertEquals(TaskState.PAUSED, task.state)
+        val cancelledDeadline = System.currentTimeMillis() + 1000
+        while (cancelled.isEmpty() && System.currentTimeMillis() < cancelledDeadline) delay(10)
+        assertEquals(listOf("pausable"), cancelled)
+
+        engine.resume(task.id)
+        val resumedDeadline = System.currentTimeMillis() + 1000
+        while (calls.size < 2 && System.currentTimeMillis() < resumedDeadline) delay(10)
+        assertEquals(2, calls.size)
+        assertEquals(TaskState.RUNNING, task.state)
+        engine.cancel(task.id)
+    }
+
+    @Test
     fun cancellingRunningTaskReleasesSlotAndStartsQueuedTask() = runBlocking {
         val calls = mutableListOf<String>()
         val runner = object : TaskRunner {
