@@ -1,6 +1,7 @@
-"""AETHRA Device Mesh - appareils comme noeuds d execution avec capabilities.
+"""AETHRA Device Mesh - devices as execution nodes with capabilities."""
 
-Composants :
-    DeviceRegistry, DeviceIdentity, DeviceSession, DeviceCapabilities,
-    DeviceTransport, DeviceCommand, DevicePermission, DevicePolicy,
-    DeviceEvent, DeviceTask
+from devices.android_adapter import AndroidRuntimeAdapter, TermuxAdapter, LinuxAdapter
+
+__all__ = [
+    "AndroidRuntimeAdapter", "TermuxAdapter", "LinuxAdapter",
+]
