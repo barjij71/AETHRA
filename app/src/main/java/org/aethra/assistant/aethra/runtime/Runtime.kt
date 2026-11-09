@@ -10,7 +10,6 @@ import org.aethra.assistant.aethra.memory.MemoryAndroid
 import org.aethra.assistant.aethra.skills.SkillRegistryAndroid
 import org.aethra.core.agents.AgentEngine
 import org.aethra.core.domain.RiskClass
-import org.aethra.core.domain.Task
 import org.aethra.core.runtime.CoreConfig
 import org.aethra.core.runtime.CoreRegistry
 import org.aethra.core.runtime.CoreState
@@ -21,6 +20,7 @@ import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
 import org.aethra.core.storage.Storage
 import org.aethra.core.task.TaskEngine
+import org.aethra.core.task.Task
 import org.aethra.core.tools.ToolRegistry
 import org.aethra.core.skills.SkillRegistry
 
@@ -96,7 +96,7 @@ class Runtime private constructor(private val context: Context) {
         try {
             val result = registry?.lifecycle?.stop() ?: Result.success(Unit)
             registry?.taskEngine?.close()
-            adapters?.memoryAndroid?.close()
+            registry?.memoryEngine?.close()
             registry = null
             adapters = null
             state = CoreState.STOPPED
@@ -143,9 +143,7 @@ class Runtime private constructor(private val context: Context) {
         args: Map<String, String> = emptyMap()
     ): Task? {
         val engine = taskEngine ?: return null
-        val task = engine.create(goal, role, riskClass)
-        task.detail = args
-        return task
+        return engine.create(goal, role, riskClass)
     }
 }
 
