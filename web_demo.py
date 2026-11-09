@@ -1747,6 +1747,67 @@ def cancel_task(task_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ===== ØµÙØ­Ø© Ø­ÙˆÙ„ AETHRA =====
+
+@app.route("/about")
+def about_page():
+    """ØµÙØ­Ø© Ø­ÙˆÙ„ Ù…Ø´Ø±ÙˆØ¹ AETHRA."""
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ø­ÙˆÙ„ AETHRA - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 700px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .feature { padding: 10px; border-bottom: 1px solid #eee; margin: 10px 0; border-radius: 6px; background: #fff; }
+            .feature:last-child { border-bottom: none; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+            .badge { background: #3498db; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; margin-right: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ¤– Ø­ÙˆÙ„ AETHRA</h1>
+            <p><strong>AETHRA</strong> Ù‡ÙŠ Ø¨ÙŠØ¦Ø© ØªÙ†ÙÙŠØ° Ø´Ø®ØµÙŠØ© Ù„Ù„Ø°ÙƒØ§Ø¡ Ø§Ù„Ø§ØµØ·Ù†Ø§Ø¹ÙŠ (Personal AI Execution Environment) ØªØ¹Ù…Ù„ Ø¹Ø¨Ø± Ø£Ø¬Ù‡Ø²Ø© Ù…ØªØ¹Ø¯Ø¯Ø© ÙˆØªØ¬Ù…Ø¹ Ø§Ù„Ù†ÙˆØ§Ø© Ø§Ù„Ø°ÙƒÙŠØ©ØŒ Ø§Ù„ÙˆÙƒÙ„Ø§Ø¡ØŒ Ø§Ù„Ù…Ù‡Ø§Ø±Ø§ØªØŒ Ø§Ù„Ø£Ø¯ÙˆØ§ØªØŒ Ø§Ù„Ø°Ø§ÙƒØ±Ø©ØŒ Ø³ÙŠØ± Ø§Ù„Ø¹Ù…Ù„ØŒ Ù…Ø²ÙˆØ¯ÙŠ Ø§Ù„Ù†Ù…Ø§Ø°Ø¬ØŒ Ø§Ù„Ø³ÙŠØ§Ø³Ø§Øª ÙˆØ§Ù„ØµÙ„Ø§Ø­ÙŠØ§ØªØŒ Ø§Ù„ØªØ­Ù‚Ù‚ØŒ ÙˆØ§Ù„ØªÙƒØ§Ù…Ù„ Ø§Ù„Ø¢Ù…Ù† Ø¨ÙŠÙ† Ø§Ù„Ø£Ø¬Ù‡Ø²Ø© ÙÙŠ Ù†Ø¸Ø§Ù… ÙˆØ§Ø­Ø¯.</p>
+            
+            <h3>Ø§Ù„Ù…ÙŠØ²Ø§Øª Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©:</h3>
+            {% for feature in features %}
+            <div class="feature">
+                <span class="badge">{{ feature.icon }}</span> {{ feature.title }}
+                <p>{{ feature.description }}</p>
+            </div>
+            {% endfor %}
+
+            <h3>Ø§Ù„Ù…ÙƒÙˆÙ†Ø§Øª Ø§Ù„ØªÙ‚Ù†ÙŠØ©:</h3>
+            <ul>
+                <li>Core: TaskEngine, PermissionBroker, EventBus, MemoryEngine, VerificationEngine, Workflow, PersistenceManager</li>
+                <li>Tools: ToolRegistry, ToolDispatcher, ShellExecutor, FileExecutor, TaskRunner</li>
+                <li>Providers: OpenAI, Anthropic, Gemini, Ollama, OpenRouter, Mock</li>
+                <li>Devices: Android, Termux, Linux, Windows (via NectarLink)</li>
+                <li>Skills: Manifest, Registry, Validator, Installer, Trust Model</li>
+                <li>Memory: Layered memory (conversation, working, task, long_term, preference)</li>
+                <li>Security: Risk levels, Approval gates, Audit log</li>
+                <li>Voice: STT, TTS, Wake Word, Pipeline</li>
+                <li>UI: Hermes-style Chat + Terminal + streaming + tool cards</li>
+            </ul>
+
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, features=[
+        {"icon": "ðŸ§ ", "title": "Ø§Ù„Ù†ÙˆØ§Ø© Ø§Ù„Ø°ÙƒÙŠØ© (Core)", "description": "Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…Ù‡Ø§Ù…ØŒ Ø³ÙŠØ± Ø§Ù„Ø¹Ù…Ù„ØŒ Ø§Ù„Ø°Ø§ÙƒØ±Ø©ØŒ Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§ØªØŒ ÙˆØ§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ù†ØªØ§Ø¦Ø¬."},
+        {"icon": "ðŸ”§", "title": "Ø§Ù„Ø£Ø¯ÙˆØ§Øª (Tools)", "description": "ØªÙ†ÙÙŠØ° Ø£ÙˆØ§Ù…Ø± Ø§Ù„Ù‚Ø´Ø±Ø©ØŒ Ø¹Ù…Ù„ÙŠØ§Øª Ø§Ù„Ù…Ù„ÙØ§ØªØŒ ÙˆØ§Ù„ØªÙƒØ§Ù…Ù„ Ù…Ø¹ Ø£Ø¯ÙˆØ§Øª Ø®Ø§Ø±Ø¬ÙŠØ©."},
+        {"icon": "ðŸ¤–", "title": "Ù…Ø²ÙˆØ¯ÙŠ Ø§Ù„Ù†Ù…Ø§Ø°Ø¬ (Providers)", "description": "Ø¯Ø¹Ù… OpenAI, Anthropic, Gemini, Ollama, OpenRouter, ÙˆÙ…Ø²ÙˆØ¯ ÙˆÙ‡Ù…ÙŠ Ù„Ù„Ø§Ø®ØªØ¨Ø§Ø±."},
+        {"icon": "ðŸ“±", "title": "Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ø£Ø¬Ù‡Ø²Ø© (Device Mesh)", "description": "Ø¯Ø¹Ù… Android, Termux, Linux, Windows Ù…Ø¹ Ù‚Ø¯Ø±Ø§Øª Ù…Ø®ØªÙ„Ù‚Ø© Ù„ÙƒÙ„ Ø¬Ù‡Ø§Ø²."},
+        {"icon": "ðŸŽ¤", "title": "Ø§Ù„ØµÙˆØª (Voice)", "description": "Ø¯Ø¹Ù… STT, TTS, Wake Word Ù…Ø¹ ÙˆØ§Ø¬Ù‡Ø© ØµÙˆØªÙŠØ© ØªÙØ§Ø¹Ù„ÙŠØ©."},
+        {"icon": "ðŸŒ", "title": "ÙˆØ§Ø¬Ù‡Ø© Ø§Ù„ÙˆÙŠØ¨ (Web UI)", "description": "ÙˆØ§Ø¬Ù‡Ø© ÙˆÙŠØ¨ ØªÙØ§Ø¹Ù„ÙŠØ© Ù…Ø¹ Ø¯Ø¹Ù… PWAØŒ WebSocket Ù„Ù„ØªØ­Ø¯ÙŠØ«Ø§Øª Ø§Ù„Ù„Ø­Ø¸ÙŠØ©ØŒ ÙˆØ¯Ø¹Ù… Ø§Ù„Ù„ØºØ© Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©."},
+    ])
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
