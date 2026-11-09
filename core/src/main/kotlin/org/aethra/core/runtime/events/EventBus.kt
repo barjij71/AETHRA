@@ -13,15 +13,32 @@ import org.aethra.core.domain.TaskState
 class EventBus {
     private val listeners =
         mutableMapOf<Class<out DomainEvent>, MutableList<(DomainEvent) -> Unit>>()
+    private val history = ArrayDeque<DomainEvent>()
+    private val lock = Any()
+    private val historyLimit = 100
 
     fun <T : DomainEvent> subscribe(eventClass: Class<T>, listener: (T) -> Unit) {
-        listeners.getOrPut(eventClass) { mutableListOf() }.add(listener as (DomainEvent) -> Unit)
+        synchronized(lock) {
+            listeners.getOrPut(eventClass) { mutableListOf() }
+                .add(listener as (DomainEvent) -> Unit)
+        }
     }
 
     fun publish(event: DomainEvent) {
-        val cls = event::class.java
-        val list = listeners[cls] ?: return
-        list.forEach { it.invoke(event) }
+        val callbacks = synchronized(lock) {
+            history.addLast(event)
+            while (history.size > historyLimit) history.removeFirst()
+            listeners[event::class.java]?.toList() ?: emptyList()
+        }
+        callbacks.forEach { it.invoke(event) }
+    }
+
+    /**
+     * Return the most recent events in chronological order.
+     * The snapshot is independent from the internal event history.
+     */
+    fun recent(limit: Int = historyLimit): List<DomainEvent> = synchronized(lock) {
+        history.takeLast(limit.coerceAtLeast(0))
     }
 }
 
