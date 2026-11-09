@@ -177,7 +177,7 @@ class ProviderTaskRunner(
         attempt: String,
         usedFallback: Boolean
     ): Map<String, Any> {
-        return mutableMapOf(
+        return reply + mutableMapOf(
             "taskId" to task.id,
             "taskGoal" to task.goal,
             "riskClass" to task.riskClass.name,
@@ -186,7 +186,7 @@ class ProviderTaskRunner(
             "usedFallback" to usedFallback,
             "attempt" to attempt,
             "attempts" to listOf(attempt)
-        ) + reply
+        )
     }
 
     private fun buildCombinedResult(
