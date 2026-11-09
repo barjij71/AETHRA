@@ -791,6 +791,15 @@ def create_task_page():
                     "name": name,
                     "status": task.status.value,
                 }
+                # Ø¥Ù†Ø´Ø§Ø¡ Ø¥Ø´Ø¹Ø§Ø± ØªÙ„Ù‚Ø§Ø¦ÙŠ Ø¹Ù†Ø¯ Ø¥Ù†Ø´Ø§Ø¡ Ù…Ù‡Ù…Ø©
+                try:
+                    aethra.notification_manager.notify_task_completed(
+                        task_id=task_id,
+                        task_name=name,
+                        target_device_id=None,
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 result = {"success": False, "error": str(e)}
 
