@@ -137,14 +137,6 @@ class PlatformAdapters(private val context: Context) {
         ClipboardReadTool(context)
     )
 
-    /** Executor for every Android-implemented tool, keyed by tool id. */
-    private val androidToolExecutors: Map<String, suspend (Map<String, String>) -> Result<Map<String, Any>>> =
-        mapOf(
-            "device.info" to { _ -> DeviceInfoTool(context).execute() },
-            "file.read" to { args -> FileReadTool(context).execute(args["path"] ?: "") },
-            "clipboard.read" to { _ -> ClipboardReadTool(context).execute() }
-        )
-
     fun registerAndroidTools() {
         for (instance in androidToolInstances) {
             toolRegistry.register(instance.tool)
@@ -212,9 +204,6 @@ class PlatformAdapters(private val context: Context) {
          * bypassing the approval gate.
          */
         private suspend fun dispatchTool(tool: Tool, task: Task, goal: String): Result<Map<String, Any>> {
-            val executor = adapters.androidToolExecutors[tool.id]
-                ?: return Result.failure(Exception(
-                    "tool " + tool.id + " is declared but has no Android implementation yet"))
             if (!adapters.policyEngine.allows(tool.riskClass, tool)) {
                 adapters.auditLog.record(
                     entry("tool.policy.reject", task.id, tool.id, tool.riskClass, "DENIED", "policy rejected")
@@ -230,7 +219,13 @@ class PlatformAdapters(private val context: Context) {
             adapters.auditLog.record(
                 entry("tool.execution.grant", task.id, tool.id, tool.riskClass, "GRANTED", "approved")
             )
-            val result = executor(toolArgs(tool, goal))
+            val result = when (tool.id) {
+                "device.info" -> DeviceInfoTool(context).execute()
+                "file.read" -> FileReadTool(context).execute(toolArgs(tool, goal)["path"] ?: "")
+                "clipboard.read" -> ClipboardReadTool(context).execute()
+                else -> return Result.failure(Exception(
+                    "tool " + tool.id + " is declared but has no Android implementation yet"))
+            }
             if (result.isSuccess) {
                 adapters.auditLog.record(
                     entry("tool.execution.success", task.id, tool.id, tool.riskClass, "GRANTED", "success")
