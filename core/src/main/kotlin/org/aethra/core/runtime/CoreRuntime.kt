@@ -7,6 +7,7 @@ import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
 import org.aethra.core.storage.Storage
 import org.aethra.core.task.TaskEngine
+import org.aethra.core.task.TaskRunner
 import org.aethra.core.task.ProviderTaskRunner
 import org.aethra.core.task.TaskScheduler
 import org.aethra.core.task.TaskPersistence
