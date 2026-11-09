@@ -85,7 +85,7 @@ class PlatformAdapters(private val context: Context) {
     val modelRegistry = ModelRegistry(storage, auditLog)
     val providerModelRouter = ProviderModelRouter(providerRegistry, modelRegistry)
 
-    private val taskRunner: TaskRunner = AndroidTaskDispatcher(this)
+    val taskRunner: TaskRunner = AndroidTaskDispatcher(this)
     private lateinit var coreTaskEngine: TaskEngine
 
     fun bindCoreTaskEngine(taskEngine: TaskEngine) {
@@ -126,14 +126,19 @@ class PlatformAdapters(private val context: Context) {
     inner class AndroidTaskDispatcher(
         private val adapters: PlatformAdapters
     ) : TaskRunner {
+        private val providerRunner = ProviderTaskRunner(
+            router = adapters.providerModelRouter,
+            providerRegistry = adapters.providerRegistry,
+            auditLog = adapters.auditLog
+        )
+
         override suspend fun run(task: Task): Result<Map<String, Any>> {
-            val toolId = task.id.takeIf { adapters.toolRegistry.get(it) != null }
-                ?: task.goal.trim()
+            val toolId = task.goal.trim()
             val tool = adapters.toolRegistry.get(toolId)
-                ?: return Result.failure(Exception("unknown tool: " + toolId))
-            return when (tool.id) {
+            return when (tool?.id) {
                 "device.info" -> DeviceInfoTool(adapters.context).execute()
-                else -> Result.failure(Exception("unsupported tool id: " + tool.id))
+                null -> providerRunner.run(task)
+                else -> Result.failure(Exception("unsupported local tool id: " + tool.id))
             }
         }
     }
