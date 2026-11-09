@@ -26,6 +26,9 @@ from devices.registry import DeviceRegistry
 from devices.android_adapter import AndroidRuntimeAdapter, LinuxAdapter
 from skills.registry import SkillRegistry
 from skills.manifest import SkillManifest
+from providers.registry import ProviderRegistry
+from providers.mock import MockProvider
+from providers.ollama import OllamaProvider
 
 app = Flask(__name__)
 
@@ -697,6 +700,70 @@ def skills_page():
     </body>
     </html>
     """, skills=skills)
+
+
+# ===== ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…ÙˆÙØ±Ø§Øª =====
+
+@app.route("/providers")
+def providers_page():
+    """ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…ÙˆÙØ±Ø§Øª."""
+    providers = []
+    try:
+        reg = ProviderRegistry()
+        reg.register(MockProvider(), is_default=True)
+        reg.register(OllamaProvider())
+        providers = reg.list_providers()
+        available = reg.list_available_providers()
+    except Exception as e:
+        providers = []
+        available = []
+        error = str(e)
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ø§Ù„Ù…ÙˆÙØ±Ø§Øª - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 700px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .provider { padding: 15px; border-bottom: 1px solid #eee; margin: 10px 0; border-radius: 6px; background: #fff; }
+            .provider:last-child { border-bottom: none; }
+            .provider-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+            .provider-name { font-weight: bold; font-size: 16px; }
+            .provider-status { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+            .status-available { background: #e8f5e9; color: #2e7d32; }
+            .status-unavailable { background: #ffebee; color: #c62828; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ”Œ Ø§Ù„Ù…ÙˆÙØ±Ø§Øª Ø§Ù„Ù…ØªØ§Ø­Ø©</h1>
+            {% for p in providers %}
+            <div class="provider">
+                <div class="provider-header">
+                    <span class="provider-name">{{ p.name }}</div>
+                    <span class="provider-status {{ 'status-available' if p in available else 'status-unavailable' }}">
+                        {% if p in available %}Ù…ØªØ§Ø­{% else %}ØºÙŠØ± Ù…ØªØ§Ø­{% endif %}
+                    </span>
+                </div>
+                <div>
+                    <strong>Ø§Ù„Ù…Ø¹Ø±Ù:</strong> {{ p.provider_id }} | 
+                    <strong>Ø§Ù„Ù†Ù…Ø§Ø°Ø¬:</strong> {{ p.models | length if p.models else 0 }}
+                </div>
+            </div>
+            {% endfor %}
+            {% if not providers %}
+            <p>Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…ÙˆÙØ±Ø§Øª.</p>
+            {% endif %}
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, providers=providers, available=available)
 
 
 if __name__ == "__main__":
