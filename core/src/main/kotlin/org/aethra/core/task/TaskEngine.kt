@@ -93,6 +93,10 @@ class TaskEngine(
         if (dependsOn.isEmpty()) {
             enqueue(task)
         } else {
+            // WAITING_DEPENDENCY is entered through PREPARING in the state
+            // machine. Keep dependency tasks blocked at creation time instead
+            // of silently rejecting an illegal QUEUED -> WAITING transition.
+            transition(task, TaskState.PREPARING)
             transition(task, TaskState.WAITING_DEPENDENCY)
             persist()
         }
