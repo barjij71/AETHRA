@@ -20,7 +20,7 @@ object TaskStateMachine {
         TaskState.RUNNING to setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR, TaskState.PAUSED),
         TaskState.PAUSED to setOf(TaskState.RUNNING, TaskState.QUEUED, TaskState.CANCELLED),
         TaskState.WAITING_APPROVAL to setOf(TaskState.APPROVED, TaskState.CANCELLED),
-        TaskState.FAILED to setOf(TaskState.QUEUED, TaskState.RUNNING, TaskState.COMPLETED),
+        TaskState.FAILED to setOf(TaskState.QUEUED, TaskState.RUNNING),
         TaskState.COMPLETED to emptySet(),
         TaskState.CANCELLED to emptySet(),
         TaskState.ERROR to emptySet()
