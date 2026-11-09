@@ -92,6 +92,9 @@ class TaskEngine(
         // to the running queue prematurely.
         if (dependsOn.isEmpty()) {
             enqueue(task)
+        } else {
+            transition(task, TaskState.WAITING_DEPENDENCY)
+            persist()
         }
         return task
     }
