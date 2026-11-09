@@ -31,7 +31,7 @@ fun AthraHomePage(runtime: Runtime) {
     LaunchedEffect(runtime) {
         while (isActive) {
             tasks = taskEngine?.allTasks() ?: emptyList()
-            events = emptyList()
+            events = runtime.eventBus?.recent(50) ?: emptyList()
             skills = skillRegistryAndroid?.all() ?: emptyList()
             memories = memoryAndroid?.all() ?: emptyList()
             delay(2000)
