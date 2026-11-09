@@ -62,7 +62,8 @@ class Runtime(private val context: Context) {
                 permissionBroker = platform.permissionBroker,
                 providerRegistry = platform.providerRegistry,
                 modelRegistry = platform.modelRegistry,
-                providerModelRouter = platform.providerModelRouter
+                providerModelRouter = platform.providerModelRouter,
+                taskRunner = platform.taskRunner
             )
 
             platform.registerAndroidTools()
