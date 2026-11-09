@@ -32,6 +32,7 @@ class TaskEngine(
     private val lock = Any()
     private val running = LinkedHashSet<String>()
     private val pending = LinkedHashSet<String>()
+    private val jobs = HashMap<String, Job>()
     private val dependents = HashMap<String, MutableList<String>>()
     private val persistence = TaskPersistence(storage)
     private val restored = CompletableDeferred<Unit>()
@@ -40,6 +41,7 @@ class TaskEngine(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     init {
+        require(maxConcurrent > 0) { "maxConcurrent must be > 0" }
         load()
     }
 
@@ -110,16 +112,18 @@ class TaskEngine(
             TaskState.APPROVED, TaskState.RUNNING,
             mapOf("reason" to reason)
         ))
-        scope.launch {
+        val job = scope.launch {
             try {
                 execute(task)
             } finally {
                 synchronized(lock) {
                     running.remove(task.id)
+                    jobs.remove(task.id)
                 }
                 drainQueue()
             }
         }
+        jobs[task.id] = job
     }
 
     private fun drainQueue() {
@@ -333,13 +337,15 @@ class TaskEngine(
         if (task.state in setOf(TaskState.RUNNING, TaskState.PAUSED, TaskState.WAITING_APPROVAL, TaskState.QUEUED)) {
             val wasRunning = task.state == TaskState.RUNNING
             task.cancel()
-            // NOTE: Do NOT cancel the whole scope here — a single task cancellation
-            // must not kill independent running tasks. The timeout wrapper in
-            // execute() relies on CancellationException to propagate a natural
-            // cancellation without terminating the engine's coroutine scope.
+            pending.remove(taskId)
+            if (wasRunning) {
+                jobs[taskId]?.cancel()
+                running.remove(taskId)
+            }
+            persist()
             eventBus.publish(TaskEvent("cancel", System.currentTimeMillis(), task.id, task.state, task.state))
-            // Re-evaluate dependents when this task is cancelled
             onTaskTerminal(taskId)
+            if (wasRunning) drainQueue()
         }
     }
 

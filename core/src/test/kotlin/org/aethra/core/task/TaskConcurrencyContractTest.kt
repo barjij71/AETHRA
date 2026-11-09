@@ -72,6 +72,37 @@ class TaskConcurrencyContractTest {
         assertEquals(TaskState.COMPLETED, second.state)
         assertTrue(calls.indexOf("second") > calls.indexOf("first"))
     }
+    @Test
+    fun cancellingRunningTaskReleasesSlotAndStartsQueuedTask() = runBlocking {
+        val calls = mutableListOf<String>()
+        val runner = object : TaskRunner {
+            override suspend fun run(task: Task): Result<Map<String, Any>> {
+                calls += task.goal
+                delay(5000)
+                return Result.success(emptyMap())
+            }
+        }
+        val engine = TaskEngine(ConcurrencyTestStorage(), EventBus(), runner, maxConcurrent = 1)
+        val first = engine.create("first")
+        val second = engine.create("second")
+
+        engine.run(first.id)
+        engine.run(second.id)
+        assertEquals(TaskState.QUEUED, second.state)
+
+        engine.cancel(first.id)
+        assertEquals(TaskState.CANCELLED, first.state)
+
+        val deadline = System.currentTimeMillis() + 3000
+        while (second.state != TaskState.RUNNING && System.currentTimeMillis() < deadline) {
+            delay(20)
+        }
+
+        assertEquals(TaskState.RUNNING, second.state)
+        assertEquals(1, calls.count { it == "second" })
+        engine.cancel(second.id)
+    }
+
 }
 
 private class ConcurrencyTestStorage : Storage {
