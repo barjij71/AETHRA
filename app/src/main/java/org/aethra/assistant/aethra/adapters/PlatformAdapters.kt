@@ -259,7 +259,13 @@ class PlatformAdapters(private val context: Context) {
 
         private fun toolArgs(tool: Tool, goal: String): Map<String, String> {
             val rest = goal.removePrefix(tool.id).trim()
-            return if (rest.isEmpty()) emptyMap() else mapOf("path" to rest)
+            if (rest.isEmpty()) return emptyMap()
+            return when (tool.id) {
+                "app.launch" -> mapOf("package" to rest)
+                "app.query" -> mapOf("query" to rest)
+                "file.read" -> mapOf("path" to rest)
+                else -> mapOf("value" to rest)
+            }
         }
 
         private fun entry(
