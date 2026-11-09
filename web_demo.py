@@ -151,6 +151,11 @@ HTML_TEMPLATE = """
             <div class="task-item">
                 <span>{{ task.name }}</span>
                 <span class="status-badge status-{{ task.status }}">{{ task.status }}</span>
+                {% if task.status == "QUEUED" %}
+                <form method="POST" action="/tasks/{{ task.id }}/run" style="display:inline;margin-left:10px;">
+                    <button type="submit" style="background:#28a745;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:13px;">?????????????????????</button>
+                </form>
+                {% endif %}
                 {% if task.status == "RUNNING" %}
                 <form method="POST" action="/tasks/{{ task.id }}/cancel" style="display:inline;margin-left:10px;">
                     <button type="submit" style="background:#e74c3c;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Ø¥Ù„ØºØ§Ø¡</button>
@@ -1238,6 +1243,11 @@ def task_detail(task_id):
             <div class="detail">
                 <span class="detail-label">Ø§Ù„Ø­Ø§Ù„Ø©:</span>
                 <span class="status-badge status-{{ task.status }}">{{ task.status }}</span>
+                {% if task.status == "QUEUED" %}
+                <form method="POST" action="/tasks/{{ task.id }}/run" style="display:inline;margin-left:10px;">
+                    <button type="submit" style="background:#28a745;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:13px;">?????????????????????</button>
+                </form>
+                {% endif %}
             </div>
             <div class="detail">
                 <span class="detail-label">Ø§Ù„Ø¹Ø¯Ø¯ Ù…Ø­Ø§ÙˆÙ„Ø§Øª Ø¥Ø¹Ø§Ø¯Ø©:</span> {{ task.retry_count }}
@@ -1734,6 +1744,25 @@ def notifications_mark_all_read():
                 _aethra.notification_manager.mark_read(n.id)
                 count += 1
         return jsonify({"success": True, "marked": count})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/tasks/<task_id>/run", methods=["POST"])
+def run_task_route(task_id):
+    try:
+        task = aethra.task_engine.get_task(task_id)
+        if task is None:
+            return jsonify({"success": False, "error": "Task not found"}), 404
+        if task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskState.CANCELLED]:
+            return jsonify({"success": False, "error": f"Task already in {task.status} state"}), 400
+        result = aethra.task_runner.run_task(task)
+        return jsonify({
+            "success": True,
+            "task_id": task_id,
+            "status": task.status.value,
+            "output": result.output if hasattr(result, 'output') else str(result),
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
