@@ -1719,7 +1719,28 @@ def api_health():
     return jsonify(health)
 
 
-# ===== Ù†Ù‚Ø·Ø© Ù†Ù‡Ø§ÙŠØ© Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ù…Ù‡Ù…Ø© =====
+# ===== Ù†Ù‚Ø·Ø© Ù†Ù‡Ø§ÙŠØ© ØªØ­Ø¯ÙŠØ¯ Ø§Ù„ÙƒÙ„ ÙƒÙ…Ù‚Ø±ÙˆØ¡ =====
+
+@app.route("/notifications/mark-all-read", methods=["POST"])
+def notifications_mark_all_read():
+    """ØªØ­Ø¯ÙŠØ¯ Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª ÙƒÙ…Ù‚Ø±ÙˆØ¡Ø©."""
+    try:
+        notifs = aethra.notification_manager.get_notifications()
+        count = 0
+        for n in notifs:
+            if not n.read:
+                _aethra.notification_manager.mark_read(n.id)
+                count += 1
+        return jsonify({"success": True, "marked": count})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
+    print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
+    print("   Ø£Ùˆ Ù…Ù† Ø®Ù„Ø§Ù„ instabox: instabox-port publish 5000")
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
 
 @app.route("/tasks/<task_id>/cancel", methods=["POST"])
 def cancel_task(task_id):
