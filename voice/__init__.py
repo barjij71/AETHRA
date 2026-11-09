@@ -10,9 +10,11 @@ Wake Word -> VAD -> STT -> AETHRA Intent -> TaskEngine -> Provider/Agent -> Resp
 from voice.stt import STTEngine, STTResult
 from voice.tts import TTSEngine, TTSResult
 from voice.wake_word import WakeWordEngine, WakeWordEvent
+from voice.pipeline import VoicePipeline, VoicePipelineResult, VoiceSession, voice_pipeline
 
 __all__ = [
     "STTEngine", "STTResult",
     "TTSEngine", "TTSResult",
     "WakeWordEngine", "WakeWordEvent",
+    "VoicePipeline", "VoicePipelineResult", "VoiceSession", "voice_pipeline",
 ]
