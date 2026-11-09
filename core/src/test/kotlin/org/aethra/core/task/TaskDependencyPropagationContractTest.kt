@@ -72,10 +72,9 @@ class TaskDependencyPropagationContractTest {
         waitForTerminal(engine, dep.id)
         assertEquals(TaskState.FAILED, dep.state)
 
-        // Dependent should become FAILED
+        // A failed dependency blocks the dependent without making it terminal.
         engine.run(dependent.id)
-        waitForTerminal(engine, dependent.id)
-        assertEquals(TaskState.FAILED, dependent.state)
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
         assertFalse(dependent.state == TaskState.RUNNING)
     }
 
@@ -122,10 +121,9 @@ class TaskDependencyPropagationContractTest {
         waitForTerminal(engine, dep.id)
         assertEquals(TaskState.CANCELLED, dep.state)
 
-        // Dependent should become CANCELLED
+        // Cancellation blocks the dependent; it does not cancel it.
         engine.run(dependent.id)
-        waitForTerminal(engine, dependent.id)
-        assertEquals(TaskState.CANCELLED, dependent.state)
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
     }
 
     @Test
@@ -150,10 +148,9 @@ class TaskDependencyPropagationContractTest {
         waitForTerminal(engine, dep.id)
         assertEquals(TaskState.FAILED, dep.state)
 
-        // Dependent should become FAILED
+        // A failed dependency blocks the dependent without making it terminal.
         engine.run(dependent.id)
-        waitForTerminal(engine, dependent.id)
-        assertEquals(TaskState.FAILED, dependent.state)
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
 
         // Retry dep - should succeed on retry
         engine.retry(dep.id)
