@@ -143,6 +143,8 @@ class PlatformAdapters(private val context: Context) {
             val tool = adapters.toolRegistry.get(toolId)
             return when (tool?.id) {
                 "device.info" -> DeviceInfoTool(adapters.context).execute()
+                "file.read" -> FileReadTool(adapters.context).execute("")
+                "clipboard.read" -> ClipboardReadTool(adapters.context).execute()
                 null -> providerRunner.run(task)
                 else -> Result.failure(Exception("unsupported local tool id: " + tool.id))
             }
