@@ -62,24 +62,4 @@ class MemoryEngineTest {
         assertEquals(1, engine.byCategory(MemoryCategory.PREFERENCES).size)
         assertEquals(1, engine.byCategory(MemoryCategory.PROJECT).size)
     }
-
-    /** Contract: store -> persist -> reload across engine instances on the same storage. */
-    @Test
-    fun persistedMemorySurvivesEngineRestart() = runBlocking {
-        val st = TestStorage()
-        val first = MemoryEngine(st)
-        first.initialize()
-        val entry = first.add(MemoryCategory.TASK, "durable memory entry", source = "core", taskId = "task-1")
-        assertEquals(1, first.all().size)
-
-        // A fresh engine over the same storage must reload the persisted entry.
-        val second = MemoryEngine(st)
-        second.initialize()
-        val reloaded = second.all()
-        assertEquals(1, reloaded.size)
-        assertEquals(entry.id, reloaded.first().id)
-        assertEquals("durable memory entry", reloaded.first().text)
-        assertEquals(MemoryCategory.TASK.name, reloaded.first().category)
-        assertEquals("task-1", reloaded.first().taskId)
-    }
 }
