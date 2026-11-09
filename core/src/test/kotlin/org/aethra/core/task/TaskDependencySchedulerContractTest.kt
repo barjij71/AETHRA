@@ -131,6 +131,46 @@ class TaskDependencySchedulerContractTest {
     }
 
     @Test
+    fun grantedApprovalExecutesSensitiveDependent() = runBlocking {
+        val engine = makeEngine()
+        val dependency = engine.create("dependency")
+        val dependent = engine.create(
+            "sensitive dependent",
+            riskClass = RiskClass.SENSITIVE,
+            dependsOn = listOf(dependency.id)
+        )
+
+        engine.run(dependency.id)
+        val started = System.currentTimeMillis()
+        while (!dependency.isTerminal() && System.currentTimeMillis() - started < 5000) {
+            delay(20)
+        }
+        assertEquals(TaskState.COMPLETED, dependency.state)
+        assertEquals(TaskState.WAITING_APPROVAL, dependent.state)
+
+        engine.approve(dependent.id, granted = true, reason = "contract test")
+        val completedStart = System.currentTimeMillis()
+        while (!dependent.isTerminal() && System.currentTimeMillis() - completedStart < 5000) {
+            delay(20)
+        }
+
+        assertEquals(TaskState.COMPLETED, dependent.state)
+    }
+
+    @Test
+    fun waitingDependencyCanBeCancelled() {
+        val engine = makeEngine()
+        val dependency = engine.create("dependency")
+        val dependent = engine.create("dependent", dependsOn = listOf(dependency.id))
+
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
+        engine.cancel(dependent.id)
+
+        assertEquals(TaskState.CANCELLED, dependent.state)
+        assertTrue(dependent.isTerminal())
+    }
+
+    @Test
     fun failedDependencyBlocksDependent() = runBlocking {
         val failingRunner = object : TaskRunner {
             override suspend fun run(task: Task): Result<Map<String, Any>> =
