@@ -1110,6 +1110,104 @@ def events_page():
     """, events=events)
 
 
+# ===== ØµÙØ­Ø© ØªÙƒÙˆÙŠÙ† Ø§Ù„Ù…ÙˆÙØ±Ø§Øª =====
+
+@app.route("/providers/config", methods=["GET", "POST"])
+def providers_config():
+    """ØµÙØ­Ø© ØªÙƒÙˆÙŠÙ† API Keys Ù„Ù„Ù…ÙˆÙØ±Ø§Øª."""
+    providers_info = [
+        {"id": "openai", "name": "OpenAI", "env_var": "OPENAI_API_KEY", "models": ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]},
+        {"id": "anthropic", "name": "Anthropic", "env_var": "ANTHROPIC_API_KEY", "models": ["claude-3-5-sonnet", "claude-3-haiku"]},
+        {"id": "gemini", "name": "Google Gemini", "env_var": "GEMINI_API_KEY", "models": ["gemini-1.5-pro", "gemini-1.5-flash"]},
+        {"id": "openrouter", "name": "OpenRouter", "env_var": "OPENROUTER_API_KEY", "models": ["openrouter/auto"]},
+        {"id": "ollama", "name": "Ollama (Ù…Ø­Ù„ÙŠ)", "env_var": "OLLAMA_BASE_URL", "models": ["llama3", "codellama", "mistral"]},
+    ]
+
+    message = None
+    if request.method == "POST":
+        provider_id = request.form.get("provider_id", "").strip()
+        api_key = request.form.get("api_key", "").strip()
+        if provider_id and api_key:
+            import os as _os
+            _os.environ[provider_id.upper() + "_API_KEY"] = api_key
+            message = {"success": True, "provider": provider_id, "message": "ØªÙ… Ø­ÙØ¸ Ù…ÙØªØ§Ø­ API Ø¨Ù†Ø¬Ø§Ø­"}
+        else:
+            message = {"success": False, "error": "Ø§Ù„Ù…Ø¹Ø±Ù ÙˆØ§Ù„Ù…ÙØªØ§Ø­ Ù…Ø·Ù„ÙˆØ¨Ø§Ù†"}
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>ØªÙƒÙˆÙŠÙ† Ø§Ù„Ù…ÙˆÙØ±Ø§Øª - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 700px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .form-group { margin-bottom: 15px; }
+            label { display: block; margin-bottom: 5px; font-weight: bold; color: #34495e; }
+            input[type="text"], select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+            button { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+            button:hover { background: #2980b9; }
+            .result { margin-top: 20px; padding: 15px; border-radius: 4px; display: none; }
+            .result.success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; display: block; }
+            .result.error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; display: block; }
+            .provider-list { margin-top: 30px; }
+            .provider-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+            .provider-item:last-child { border-bottom: none; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ”§ ØªÙƒÙˆÙŠÙ† Ø§Ù„Ù…ÙˆÙØ±Ø§Øª</h1>
+            
+            <form method="POST">
+                <div class="form-group">
+                    <label>Ø§Ø®ØªØ± Ø§Ù„Ù…Ø²ÙˆØ¯:</label>
+                    <select name="provider_id" required>
+                        {% for p in providers %}
+                        <option value="{{ p.id }}">{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Ù…ÙØªØ§Ø­ API:</label>
+                    <input type="text" name="api_key" placeholder="Ø£Ø¯Ø®Ù„ Ù…ÙØªØ§Ø­ API" required>
+                </div>
+                <button type="send">Ø­ÙØ¸ Ø§Ù„Ù…ÙØªØ§Ø­</button>
+            </form>
+            
+            {% if message %}
+            <div class="result {{ 'success' if message.success else 'error' }}">
+                {% if message.success %}
+                <strong>ØªÙ… Ø§Ù„Ø­ÙØ¸:</strong> {{ message.message }} ({{ message.provider }})
+                {% else %}
+                <strong>Ø®Ø·Ø£:</strong> {{ message.error }}
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="provider-list">
+                <h3>Ø§Ù„Ù…ÙˆÙØ±Ø§Øª Ø§Ù„Ù…Ø¯Ø¹ÙˆÙ…Ø©:</h3>
+                {% for p in providers %}
+                <div class="provider-item">
+                    <span>{{ p.name }}</span>
+                    <span>
+                        <strong>Ù…ØªØºÙŠØ± Ø§Ù„Ø¨ÙŠØ¦Ø©:</strong> {{ p.env_var }} |
+                        <strong>Ø§Ù„Ù†Ù…Ø§Ø°Ø¬:</strong> {{ p.models | join(', ') }}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, providers=providers_info, message=message)
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
