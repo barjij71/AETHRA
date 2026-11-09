@@ -19,12 +19,12 @@ import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
 import org.aethra.core.storage.Storage
-import org.aethra.core.task.TaskEngine
 import org.aethra.core.task.Task
+import org.aethra.core.task.TaskEngine
 import org.aethra.core.tools.ToolRegistry
 import org.aethra.core.skills.SkillRegistry
 
-class Runtime private constructor(private val context: Context) {
+class Runtime(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     var state: CoreState = CoreState.CREATED

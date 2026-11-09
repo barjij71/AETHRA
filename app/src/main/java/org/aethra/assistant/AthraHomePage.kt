@@ -8,8 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import org.aethra.core.domain.DomainEvent
 import org.aethra.core.domain.MemoryEntry
 import org.aethra.core.skills.Skill
@@ -52,7 +52,9 @@ fun AthraHomePage(runtime: Runtime) {
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                "Running: \${if (runtime.isRunning) "YES" else "NO"}  •  Active: \${runtime.taskEngine?.activeCount ?: 0}  •  Queued: \${runtime.taskEngine?.queuedCount ?: 0}"
+                "Running: " + if (runtime.isRunning) "YES" else "NO" +
+                    "  •  Active: " + (runtime.taskEngine?.activeCount ?: 0) +
+                    "  •  Queued: " + (runtime.taskEngine?.queuedCount ?: 0)
             )
         }
 
@@ -83,7 +85,7 @@ fun AthraHomePage(runtime: Runtime) {
             Text("No tasks yet.", style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn {
-                items(tasks) { t -> Text("\${t.id}  [\${t.state}]  \${t.goal}") }
+                items(tasks) { t -> Text(t.id + "  [" + t.state + "]  " + t.goal) }
             }
         }
 
@@ -92,7 +94,9 @@ fun AthraHomePage(runtime: Runtime) {
             Text("No events yet.", style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn {
-                items(events) { e -> Text("\${e::class.simpleName}  [\${e.source}]  \${e.timestamp}") }
+                items(events) { e ->
+                    Text(e::class.simpleName + "  [" + e.source + "]  " + e.timestamp)
+                }
             }
         }
 
@@ -101,7 +105,9 @@ fun AthraHomePage(runtime: Runtime) {
             Text("No skills yet.", style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn {
-                items(skills) { s -> Text("\${s.name} v\${s.version}  [enabled=\${s.enabled}]") }
+                items(skills) { s ->
+                    Text(s.name + " v" + s.version + "  [enabled=" + s.enabled + "]")
+                }
             }
         }
 
@@ -110,7 +116,7 @@ fun AthraHomePage(runtime: Runtime) {
             Text("No memories yet.", style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn {
-                items(memories) { m -> Text("\${m.category}  \${m.text}") }
+                items(memories) { m -> Text(m.category.toString() + "  " + m.text) }
             }
         }
     }
