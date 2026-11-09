@@ -11,7 +11,7 @@ import org.aethra.core.task.TaskExecutionException
 import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.storage.Storage
 import org.aethra.core.task.Task
-import java.util.LinkedList
+import java.util.LinkedHashSet
 import java.util.UUID
 
 enum class ExecutionPolicy {
@@ -30,7 +30,8 @@ class TaskEngine(
 ) {
     private val tasks = HashMap<String, Task>()
     private val lock = Any()
-    private val running = LinkedList<Task>()
+    private val running = LinkedHashSet<String>()
+    private val pending = LinkedHashSet<String>()
     private val dependents = HashMap<String, MutableList<String>>()
     private val persistence = TaskPersistence(storage)
     private val restored = CompletableDeferred<Unit>()
@@ -96,54 +97,88 @@ class TaskEngine(
 
     private fun enqueue(task: Task) {
         if (task.state == TaskState.QUEUED) {
-            running.add(task)
+            pending.add(task.id)
+            persist()
+        }
+    }
+
+    private fun startTaskLocked(task: Task, reason: String) {
+        transition(task, TaskState.RUNNING)
+        running.add(task.id)
+        eventBus.publish(TaskEvent(
+            "execution_started", System.currentTimeMillis(), task.id,
+            TaskState.APPROVED, TaskState.RUNNING,
+            mapOf("reason" to reason)
+        ))
+        scope.launch {
+            try {
+                execute(task)
+            } finally {
+                synchronized(lock) {
+                    running.remove(task.id)
+                }
+                drainQueue()
+            }
+        }
+    }
+
+    private fun drainQueue() {
+        synchronized(lock) {
+            while (running.size < maxConcurrent && pending.isNotEmpty()) {
+                val id = pending.iterator().next()
+                pending.remove(id)
+                val task = tasks[id] ?: continue
+                if (task.state != TaskState.QUEUED || task.isExecuted) continue
+                if (task.dependsOn.isNotEmpty() && !TaskScheduler.isReady(task.dependsOn, { tasks[it] })) {
+                    transition(task, TaskState.WAITING_DEPENDENCY)
+                    continue
+                }
+                if (task.riskClass.level >= RiskClass.SENSITIVE.level) {
+                    transition(task, TaskState.WAITING_APPROVAL)
+                    continue
+                }
+                transition(task, TaskState.PREPARING)
+                transition(task, TaskState.APPROVED)
+                startTaskLocked(task, "queue_available")
+            }
             persist()
         }
     }
 
     fun run(taskId: String): TaskState? = synchronized(lock) {
-        println("[C2-DEBUG] run called for taskId=$taskId")
-        val task: org.aethra.core.task.Task = tasks[taskId] ?: return null
-        println("[C2-DEBUG] run: task found, state=${task.state}")
-        // Idempotent execution guard: already completed/executed, no re-run
-        if (task.isExecuted) {
-            return task.state
-        }
-        // All tasks pass through PREPARING first. Tasks with unresolved dependencies
-        // then move to WAITING_DEPENDENCY; otherwise they proceed to APPROVED.
+        val task = tasks[taskId] ?: return null
+        if (task.isExecuted || task.state == TaskState.COMPLETED) return task.state
+
         if (task.state == TaskState.QUEUED || task.state == TaskState.PREPARING) {
             transition(task, TaskState.PREPARING)
         }
-        // Risk-aware approval: SENSITIVE tasks wait for explicit approval
         if (task.riskClass.level >= RiskClass.SENSITIVE.level) {
             transition(task, TaskState.WAITING_APPROVAL)
+            persist()
             return task.state
         }
         if (task.dependsOn.isNotEmpty() && !TaskScheduler.isReady(task.dependsOn, { tasks[it] })) {
-            if (task.state == TaskState.WAITING_DEPENDENCY) {
-                return task.state
-            }
             transition(task, TaskState.WAITING_DEPENDENCY)
+            persist()
             return task.state
         }
-        transition(task, TaskState.APPROVED)
+
         if (running.size >= maxConcurrent) {
+            transition(task, TaskState.APPROVED)
+            transition(task, TaskState.QUEUED)
             enqueue(task)
             return task.state
         }
-        transition(task, TaskState.RUNNING)
-        eventBus.publish(TaskEvent(
-            "execution_started", System.currentTimeMillis(), task.id, TaskState.PREPARING, TaskState.RUNNING,
-            mapOf<String, String>("reason" to "started")
-        ))
-        scope.launch {
-            execute(task)
-        }
+
+        transition(task, TaskState.APPROVED)
+        startTaskLocked(task, "started")
         persist()
         task.state
     }
 
     // --- Dependency scheduling integration ---
+
+
 
     /**
      * Wake up any dependent tasks whose dependencies are now all COMPLETED.
@@ -175,19 +210,13 @@ class TaskEngine(
         synchronized(lock) {
             if (task.state != TaskState.WAITING_DEPENDENCY) return
             if (running.size >= maxConcurrent) {
-                // Not enough capacity now; it will be woken later when a slot frees
+                transition(task, TaskState.APPROVED)
+                transition(task, TaskState.QUEUED)
+                enqueue(task)
                 return
             }
             transition(task, TaskState.APPROVED)
-            // Transition APPROVED -> RUNNING so we can launch execute() immediately
-            transition(task, TaskState.RUNNING)
-            eventBus.publish(TaskEvent(
-                "execution_started", System.currentTimeMillis(), task.id, TaskState.APPROVED, TaskState.RUNNING,
-                mapOf<String, String>("reason" to "dependency_ready")
-            ))
-            scope.launch {
-                execute(task)
-            }
+            startTaskLocked(task, "dependency_ready")
             persist()
         }
     }

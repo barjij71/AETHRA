@@ -16,7 +16,7 @@ object TaskStateMachine {
         // A dependency failure or cancellation keeps this task blocked.
         // It can proceed only after all dependencies complete successfully.
         TaskState.WAITING_DEPENDENCY to setOf(TaskState.APPROVED),
-        TaskState.APPROVED to setOf(TaskState.RUNNING, TaskState.CANCELLED),
+        TaskState.APPROVED to setOf(TaskState.RUNNING, TaskState.QUEUED, TaskState.CANCELLED),
         TaskState.RUNNING to setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR, TaskState.PAUSED),
         TaskState.PAUSED to setOf(TaskState.RUNNING, TaskState.CANCELLED),
         TaskState.WAITING_APPROVAL to setOf(TaskState.APPROVED, TaskState.CANCELLED),
