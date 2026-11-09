@@ -16,6 +16,34 @@ class TestStorage : Storage {
     override suspend fun getAll(): Map<String, String> = data.toMap()
     override suspend fun remove(key: String) { data.remove(key) }
     override suspend fun clear() { data.clear() }
+
+    @Test
+    fun addPersistsAndReloadsAcrossEngineInstances() = runBlocking {
+        val st = TestStorage()
+
+        val first = MemoryEngine(st)
+        first.initialize()
+        val entry = first.add(
+            MemoryCategory.KNOWLEDGE,
+            "AETHRA memory survives restart",
+            source = "user"
+        )
+
+        val second = MemoryEngine(st)
+        second.initialize()
+
+        val restored = second.all()
+        assertEquals(1, restored.size)
+        assertEquals(entry.id, restored.first().id)
+        assertEquals(entry.text, restored.first().text)
+        assertEquals(entry.category, restored.first().category)
+        assertEquals(entry.source, restored.first().source)
+
+        val hits = second.search("survives restart")
+        assertEquals(1, hits.size)
+        assertEquals(entry.id, hits.first().entry.id)
+    }
+
 }
 
 class MemoryEngineTest {
