@@ -22,6 +22,8 @@ from flask import Flask, render_template_string, request, jsonify, redirect, url
 from core.integration import aethra
 from core.task import TaskStatus
 from devices.notification import notification_manager, NotificationType, NotificationPriority
+from devices.registry import DeviceRegistry
+from devices.android_adapter import AndroidRuntimeAdapter, LinuxAdapter
 
 app = Flask(__name__)
 
@@ -500,6 +502,97 @@ def notifications_read(nid):
     """ØªØ­Ø¯ÙŠØ¯ Ø¥Ø´Ø¹Ø§Ø± ÙƒÙ…Ù‚Ø±ÙˆØ¡."""
     success = aethra.notification_manager.mark_read(nid)
     return jsonify({"success": success})
+
+
+# ===== ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ø£Ø¬Ù‡Ø²Ø© =====
+
+@app.route("/devices")
+def devices_page():
+    """ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ø£Ø¬Ù‡Ø²Ø©."""
+    devices = []
+    try:
+        from core.integration import aethra as _aethra
+        # Ø¥Ù†Ø´Ø§Ø¡ Ø³Ø¬Ù„ Ø£Ø¬Ù‡Ø²Ø© Ù…Ø¤Ù‚Øª Ù„Ù„Ø¹Ø±Ø¶
+        reg = DeviceRegistry()
+        android = AndroidRuntimeAdapter()
+        linux = LinuxAdapter()
+        reg.register(type('DeviceEntry', (), {
+            'identity': type('DeviceIdentity', (), {
+                'device_id': android.device_id,
+                'name': android.identity.name if hasattr(android, 'identity') else 'Android Device',
+                'platform': 'android',
+                'is_paired': True,
+            })(),
+            'capabilities': android.get_capabilities(),
+            'is_online': android.is_available(),
+        })())
+        reg.register(type('DeviceEntry', (), {
+            'identity': type('DeviceIdentity', (), {
+                'device_id': linux.device_id,
+                'name': 'Linux Device',
+                'platform': 'linux',
+                'is_paired': True,
+            })(),
+            'capabilities': linux.get_capabilities(),
+            'is_online': linux.is_available(),
+        })())
+        devices = reg.list()
+    except Exception as e:
+        devices = []
+        error = str(e)
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ø§Ù„Ø£Ø¬Ù‡Ø²Ø© - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .device { padding: 15px; border-bottom: 1px solid #eee; margin: 10px 0; border-radius: 6px; background: #fff; }
+            .device:last-child { border-bottom: none; }
+            .device-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+            .device-name { font-weight: bold; font-size: 16px; }
+            .device-platform { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; color: white; }
+            .platform-android { background: #4caf50; }
+            .platform-linux { background: #2196f3; }
+            .platform-windows { background: #9c27b0; }
+            .device-cap { margin: 5px 0; font-size: 13px; color: #555; }
+            .status-online { color: #27ae60; font-weight: bold; }
+            .status-offline { color: #e74c3c; font-weight: bold; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ“± Ø§Ù„Ø£Ø¬Ù‡Ø²Ø© Ø§Ù„Ù…ØªØµÙ„Ø©</h1>
+            {% if devices %}
+            {% for d in devices %}
+            <div class="device">
+                <div class="device-header">
+                    <span class="device-name">{{ d.identity.name }}</span>
+                    <span class="device-platform platform-{{ d.identity.platform }}">{{ d.identity.platform }}</span>
+                </div>
+                <div class="device-cap">
+                    <span class="{% if d.is_online %}status-online{% else %}status-offline{% endif %}">
+                        {% if d.is_online %}Ù…ØªØµÙ„{% else %}ØºÙŠØ± Ù…ØªØµÙ„{% endif %}
+                    </span>
+                </div>
+                <div class="device-cap">
+                    Ø§Ù„Ù‚Ø¯Ø±Ø§Øª: {{ d.capabilities.shell and 'Ù‚Ø´Ø±Ø©' or '' }} {{ d.capabilities.file_transfer and 'Ù†Ù‚Ù„ Ù…Ù„ÙØ§Øª' or '' }} {{ d.capabilities.clipboard and 'Ø­Ø§ÙØ¸Ø©' or '' }} {{ d.capabilities.camera and 'ÙƒØ§Ù…ÙŠØ±Ø§' or '' }} {{ d.capabilities.microphone and 'Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ†' or '' }} {{ d.capabilities.gpu and 'GPU' or '' }}
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p>Ù„Ø§ ØªÙˆØ¬Ø¯ Ø£Ø¬Ù‡Ø²Ø© Ù…ØªØµÙ„Ø©.</p>
+            {% endif %}
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, devices=devices, error=error)
 
 
 if __name__ == "__main__":
