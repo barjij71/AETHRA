@@ -1010,6 +1010,71 @@ def task_detail(task_id):
     """, task=task, evidence=evidence)
 
 
+# ===== ØµÙØ­Ø© Ø³Ø¬Ù„ Ø§Ù„Ø£Ø­Ø¯Ø§Ø« =====
+
+@app.route("/events")
+def events_page():
+    """ØµÙØ­Ø© Ø³Ø¬Ù„ Ø§Ù„Ø£Ø­Ø¯Ø§Ø« Ù…Ù† EventBus."""
+    events = []
+    try:
+        from core.integration import aethra as _aethra
+        event_bus = _aethra.event_bus
+        recent = event_bus.get_history(limit=30)
+        for e in recent:
+            events.append({
+                "type": e.type,
+                "source": e.source,
+                "timestamp": e.timestamp,
+                "payload": str(e.payload)[:100] if e.payload else "",
+            })
+    except Exception as e:
+        events = []
+        error = str(e)
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ø³Ø¬Ù„ Ø§Ù„Ø£Ø­Ø¯Ø§Ø« - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 8px; text-align: right; border-bottom: 1px solid #ddd; }
+            th { background: #3498db; color: white; }
+            .event-type { font-weight: bold; color: #2980b9; }
+            .event-source { color: #7f8c8d; font-size: 12px; }
+            .event-payload { color: #555; font-size: 12px; max-width: 300px; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ“¡ Ø³Ø¬Ù„ Ø§Ù„Ø£Ø­Ø¯Ø§Ø« (EventBus)</h1>
+            {% if events %}
+            <table>
+                <tr><th>Ø§Ù„ÙˆÙ‚Øª</th><th>Ø§Ù„Ù†ÙˆØ¹</th><th>Ø§Ù„Ù…ØµØ¯Ø±</th><th>Ø§Ù„Ø­Ù…ÙˆÙ„Ø©</th></tr>
+                {% for e in events %}
+                <tr>
+                    <td>{{ "%.0f"|format(e.timestamp) }}</td>
+                    <td class="event-type">{{ e.type }}</td>
+                    <td class="event-source">{{ e.source }}</td>
+                    <td class="event-payload">{{ e.payload }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% else %}
+            <p>Ù„Ø§ ØªÙˆØ¬Ø¯ Ø£Ø­Ø¯Ø§Ø«.</p>
+            {% endif %}
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, events=events)
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
