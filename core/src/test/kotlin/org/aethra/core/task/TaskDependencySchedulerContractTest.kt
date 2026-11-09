@@ -104,6 +104,33 @@ class TaskDependencySchedulerContractTest {
     }
 
     @Test
+    fun sensitiveDependentKeepsApprovalGateAfterDependencyCompletes() = runBlocking {
+        val engine = makeEngine()
+        val dependency = engine.create("dependency")
+        val dependent = engine.create(
+            "sensitive dependent",
+            riskClass = RiskClass.SENSITIVE,
+            dependsOn = listOf(dependency.id)
+        )
+
+        engine.run(dependency.id)
+        val started = System.currentTimeMillis()
+        while (!dependency.isTerminal() && System.currentTimeMillis() - started < 5000) {
+            delay(20)
+        }
+        assertEquals(TaskState.COMPLETED, dependency.state)
+
+        val wakeStart = System.currentTimeMillis()
+        while (dependent.state != TaskState.WAITING_APPROVAL &&
+            System.currentTimeMillis() - wakeStart < 5000) {
+            delay(20)
+        }
+
+        assertEquals(TaskState.WAITING_APPROVAL, dependent.state)
+        assertFalse(dependent.isTerminal())
+    }
+
+    @Test
     fun failedDependencyBlocksDependent() = runBlocking {
         val failingRunner = object : TaskRunner {
             override suspend fun run(task: Task): Result<Map<String, Any>> =
