@@ -27,8 +27,6 @@ import org.aethra.core.runtime.LifecycleImpl
 import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
-import org.aethra.core.skills.Skill
-import org.aethra.core.skills.SkillState
 import org.aethra.core.storage.Storage
 import org.aethra.core.task.Task
 import org.aethra.core.task.TaskEngine
@@ -140,34 +138,6 @@ class PlatformAdapters(private val context: Context) {
     fun registerAndroidTools() {
         for (instance in androidToolInstances) {
             toolRegistry.register(instance.tool)
-        }
-        registerBuiltinSkills()
-    }
-
-    /**
-     * Register real built-in skills backed by native Android tools through the
-     * existing SkillRegistry architecture (INSTALLED state, persisted). A
-     * skill's capabilities map to ToolRegistry tools, so execution stays on
-     * the normal Skill -> ToolRegistry -> policy -> AuditLog path. No fake
-     * skill list is exposed to the UI: these skills are executable via the
-     * normal task path and can be enabled/disabled through the registry.
-     */
-    private fun registerBuiltinSkills() {
-        for (instance in androidToolInstances) {
-            val tool = instance.tool
-            skillRegistryAndroid.register(
-                Skill(
-                    id = "builtin." + tool.id,
-                    name = "Android " + tool.category + " " + tool.id,
-                    description = tool.description,
-                    entrypoints = listOf(tool.id),
-                    capabilities = tool.requiredCapabilities,
-                    platforms = listOf("android"),
-                    riskClass = tool.riskClass,
-                    state = SkillState.INSTALLED,
-                    enabled = true
-                )
-            )
         }
     }
 
