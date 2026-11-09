@@ -167,49 +167,11 @@ class TaskEngine(
 
     // --- Execution lifecycle hooks ---
 
-    /** Called when a task transitions to a terminal state; re-evaluates dependents. */
+    /** Re-evaluate dependents after a dependency changes state.
+     * Dependents remain WAITING_DEPENDENCY unless every dependency completes.
+     * This allows an explicit retry of a failed dependency to unlock the chain.
+     */
     private fun onTaskTerminal(taskId: String) {
-        println("[C2-DEBUG] onTaskTerminal called for taskId=$taskId")
-        val children = synchronized(lock) { dependents[taskId]?.toMutableList() }
-        println("[C2-DEBUG] onTaskTerminal children count=${children?.size}")
-        children?.forEach { childId ->
-            val child = tasks[childId] ?: return@forEach
-            println("[C2-DEBUG] onTaskTerminal: childId=$childId, child.state=${child.state}")
-            // Find the terminal state of this dependency
-            val depState = tasks[taskId]?.state ?: return@forEach
-            println("[C2-DEBUG] onTaskTerminal: depState=$depState, depId=$taskId")
-            // Failed and errored dependencies fail their dependents.
-            // A cancelled dependency leaves dependents blocked in their current
-            // non-terminal state; it must never make them runnable.
-            // COMPLETED is handled by wakeReadyDependents() via isReady().
-            if (depState !in setOf(TaskState.FAILED, TaskState.ERROR)) {
-                return@forEach
-            }
-            val childState = when (depState) {
-                TaskState.FAILED -> TaskState.FAILED
-                TaskState.ERROR -> TaskState.ERROR
-                else -> return@forEach
-            }
-            // Dependent is in WAITING_DEPENDENCY: already blocked, just propagate failure
-            if (child.state == TaskState.WAITING_DEPENDENCY) {
-                transition(child, childState)
-                eventBus.publish(TaskEvent(
-                    "dependency_failed", System.currentTimeMillis(), child.id,
-                    TaskState.WAITING_DEPENDENCY, childState,
-                    mapOf("dependency_id" to taskId, "reason" to depState.name.lowercase())
-                ))
-            } else if (child.state == TaskState.QUEUED) {
-                // Dependent not yet started: transition directly to failure state
-                transition(child, childState)
-                eventBus.publish(TaskEvent(
-                    "dependency_failed", System.currentTimeMillis(), child.id,
-                    child.state, childState,
-                    mapOf("dependency_id" to taskId, "reason" to depState.name.lowercase())
-                ))
-            }
-            // Dependents in RUNNING/PAUSED are not blocked by dependency failure in C2 (C4 policy)
-        }
-        // COMPLETED dependencies may wake up WAITING_DEPENDENCY dependents
         wakeReadyDependents()
     }
 
@@ -347,7 +309,7 @@ class TaskEngine(
     fun retry(taskId: String) {
         val task = tasks[taskId] ?: return
         if (task.state == TaskState.FAILED) {
-            task.isExecuted = false
+            task.resetForRetry()
             transition(task, TaskState.QUEUED)
             run(task.id)
         }
