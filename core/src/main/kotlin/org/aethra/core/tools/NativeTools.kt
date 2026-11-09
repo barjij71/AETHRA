@@ -110,7 +110,8 @@ class NativeTools {
             outputSchema = mapOf("battery" to "map"),
             riskClass = RiskClass.READ_ONLY,
             approvalRequired = false,
-            timeoutSeconds = 15
+            timeoutSeconds = 15,
+            aliases = listOf("info device", "device info")
         )
     )
 }
