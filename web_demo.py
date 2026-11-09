@@ -766,6 +766,91 @@ def providers_page():
     """, providers=providers, available=available)
 
 
+# ===== ØµÙØ­Ø© Ø¥Ù†Ø´Ø§Ø¡ Ù…Ù‡Ù…Ø© =====
+
+@app.route("/create-task", methods=["GET", "POST"])
+def create_task_page():
+    """ØµÙØ­Ø© Ø¥Ù†Ø´Ø§Ø¡ Ù…Ù‡Ù…Ø© Ø¬Ø¯ÙŠØ¯Ø©."""
+    result = None
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        command = request.form.get("command", "").strip()
+        actor = request.form.get("actor", "web_user").strip()
+        if not name or not command:
+            result = {"success": False, "error": "Ø§Ù„Ø§Ø³Ù… ÙˆØ§Ù„Ø£Ù…Ø± Ù…Ø·Ù„ÙˆØ¨Ø§Ù†"}
+        else:
+            try:
+                task_id = aethra.task_engine.create_task(
+                    name, "shell.exec",
+                    metadata={"command": command, "actor": actor},
+                )
+                task = aethra.task_engine.get_task(task_id)
+                result = {
+                    "success": True,
+                    "task_id": task_id,
+                    "name": name,
+                    "status": task.status.value,
+                }
+            except Exception as e:
+                result = {"success": False, "error": str(e)}
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ø¥Ù†Ø´Ø§Ø¡ Ù…Ù‡Ù…Ø© - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .form-group { margin-bottom: 15px; }
+            label { display: block; margin-bottom: 5px; font-weight: bold; color: #34495e; }
+            input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+            button { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+            button:hover { background: #2980b9; }
+            .result { margin-top: 20px; padding: 15px; border-radius: 4px; display: none; }
+            .result.success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; display: block; }
+            .result.error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; display: block; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>âž• Ø¥Ù†Ø´Ø§Ø¡ Ù…Ù‡Ù…Ø© Ø¬Ø¯ÙŠØ¯Ø©</h1>
+            <form method="POST">
+                <div class="form-group">
+                    <label>Ø§Ø³Ù… Ø§Ù„Ù…Ù‡Ù…Ø©:</label>
+                    <input type="text" name="name" placeholder="Ù…Ø«Ø§Ù„: Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ù‚Ø´Ø±Ø©" required>
+                </div>
+                <div class="form-group">
+                    <label>Ø§Ù„Ø£Ù…Ø±:</label>
+                    <input type="text" name="command" placeholder="Ù…Ø«Ø§Ù„: echo hello" required>
+                </div>
+                <div class="form-group">
+                    <label>Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…:</label>
+                    <input type="text" name="actor" value="web_user">
+                </div>
+                <button type="send">Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ù…Ù‡Ù…Ø©</button>
+            </form>
+            {% if result %}
+            <div class="result {{ 'success' if result.success else 'error' }}">
+                {% if result.success %}
+                <strong>ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ù…Ù‡Ù…Ø©:</strong> {{ result.name }}<br>
+                <strong>Ø§Ù„Ù…Ø¹Ø±Ù:</strong> {{ result.task_id[:8] }}<br>
+                <strong>Ø§Ù„Ø­Ø§Ù„Ø©:</strong> {{ result.status }}
+                {% else %}
+                <strong>Ø®Ø·Ø£:</strong> {{ result.error }}
+                {% endif %}
+            </div>
+            {% endif %}
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, result=result)
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
