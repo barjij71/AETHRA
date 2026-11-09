@@ -40,6 +40,15 @@ class TaskDependencySchedulerContractTest {
     }
 
     @Test
+    fun dependentStartsInWaitingDependencyStateAtCreation() {
+        val engine = makeEngine()
+        val dependency = engine.create("dependency")
+        val dependent = engine.create("dependent", dependsOn = listOf(dependency.id))
+
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
+    }
+
+    @Test
     fun dependentWaitsForRunningDependency() = runBlocking {
         val engine = makeEngine()
         val dep = engine.create("dependency")
