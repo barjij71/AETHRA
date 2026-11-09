@@ -449,6 +449,59 @@ def status_page():
     """, snap=snap)
 
 
+# ===== Ù†Ù‚Ø§Ø· Ù†Ù‡Ø§ÙŠØ© Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª =====
+
+@app.route("/notifications/api")
+def notifications_api():
+    """Ø¬Ù„Ø¨ Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª Ø¨ØµÙŠØºØ© JSON."""
+    notifs = aethra.notification_manager.get_notifications()
+    return jsonify([
+        {
+            "id": n.id,
+            "type": n.type.value,
+            "title": n.title,
+            "message": n.message,
+            "priority": n.priority.value,
+            "timestamp": n.timestamp,
+            "read": n.read,
+            "acknowledged": n.acknowledged,
+            "source": n.source,
+        }
+        for n in notifs
+    ])
+
+
+@app.route("/notifications/create", methods=["POST"])
+def notifications_create():
+    """Ø¥Ù†Ø´Ø§Ø¡ Ø¥Ø´Ø¹Ø§Ø± Ø¬Ø¯ÙŠØ¯."""
+    title = request.form.get("title", "").strip()
+    message = request.form.get("message", "").strip()
+    priority = request.form.get("priority", "NORMAL").strip()
+    if not title or not message:
+        return jsonify({"success": False, "error": "Ø§Ù„Ø¹Ù†ÙˆØ§Ù† ÙˆØ§Ù„Ù…essage Ù…Ø·Ù„ÙˆØ¨Ø§Ù†"}), 400
+
+    try:
+        prio = NotificationPriority[priority.upper()]
+    except KeyError:
+        prio = NotificationPriority.NORMAL
+
+    nid = aethra.notification_manager.create_notification(
+        type=NotificationType.INFO,
+        title=title,
+        message=message,
+        priority=prio,
+        source="web_demo",
+    )
+    return jsonify({"success": True, "id": nid})
+
+
+@app.route("/notifications/<nid>/read", methods=["POST"])
+def notifications_read(nid):
+    """ØªØ­Ø¯ÙŠØ¯ Ø¥Ø´Ø¹Ø§Ø± ÙƒÙ…Ù‚Ø±ÙˆØ¡."""
+    success = aethra.notification_manager.mark_read(nid)
+    return jsonify({"success": success})
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
