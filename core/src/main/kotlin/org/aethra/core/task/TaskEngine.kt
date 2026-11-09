@@ -351,20 +351,29 @@ class TaskEngine(
     }
 
     fun cancel(taskId: String) {
-        val task = tasks[taskId] ?: return
-        if (task.state in setOf(TaskState.RUNNING, TaskState.PAUSED, TaskState.WAITING_APPROVAL, TaskState.QUEUED)) {
-            val wasRunning = task.state == TaskState.RUNNING
+        val wasRunning = synchronized(lock) {
+            val task = tasks[taskId] ?: return
+            if (task.state !in setOf(TaskState.RUNNING, TaskState.PAUSED, TaskState.WAITING_APPROVAL, TaskState.QUEUED)) {
+                return
+            }
+
+            val runningNow = task.state == TaskState.RUNNING
             task.cancel()
             pending.remove(taskId)
-            if (wasRunning) {
+            if (runningNow) {
+                // Keep the job/running-slot update atomic with the task transition.
+                // The coroutine completion handler also takes this lock, so it can
+                // safely reconcile the slot after cancellation.
                 jobs[taskId]?.cancel()
                 running.remove(taskId)
             }
             persist()
             eventBus.publish(TaskEvent("cancel", System.currentTimeMillis(), task.id, task.state, task.state))
-            onTaskTerminal(taskId)
-            if (wasRunning) drainQueue()
+            runningNow
         }
+
+        onTaskTerminal(taskId)
+        if (wasRunning) drainQueue()
     }
 
     fun pause(taskId: String) {
