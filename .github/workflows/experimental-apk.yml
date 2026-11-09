@@ -1,4 +1,5 @@
 name: Experimental APK
+# Full current-project verification: Android APK + Core contract tests.
 
 on:
   push:
