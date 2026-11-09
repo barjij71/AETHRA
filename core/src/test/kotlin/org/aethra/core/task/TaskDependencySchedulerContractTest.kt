@@ -215,6 +215,28 @@ class TaskDependencySchedulerContractTest {
         assertFalse(dependent.isTerminal())
     }
     @Test
+    fun scheduleOrdersDependenciesBeforeDependents() {
+        val first = Task("first")
+        val second = Task("second", dependsOn = listOf(first.id))
+        val third = Task("third", dependsOn = listOf(second.id))
+        val ordered = TaskScheduler.schedule(listOf(third, first, second)) { id ->
+            listOf(first, second, third).find { it.id == id }
+        }
+        assertEquals(listOf(first.id, second.id, third.id), ordered.map { it.id })
+    }
+
+    @Test
+    fun schedulePreservesRelativeOrderOfIndependentTasks() {
+        val first = Task("first")
+        val second = Task("second")
+        val third = Task("third", dependsOn = listOf(first.id))
+        val ordered = TaskScheduler.schedule(listOf(third, second, first)) { id ->
+            listOf(first, second, third).find { it.id == id }
+        }
+        assertEquals(listOf(second.id, first.id, third.id), ordered.map { it.id })
+    }
+
+    @Test
     fun selfDependencyIsRejectedAsCycle() {
         val task = Task("self")
         val tasks = mapOf(task.id to task)
