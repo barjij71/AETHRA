@@ -11,8 +11,8 @@ import org.junit.Test
 
 class TaskDependencySchedulerContractTest {
 
-    private fun makeEngine(): TaskEngine {
-        val runner = object : TaskRunner {
+    private fun makeEngine(runnerOverride: TaskRunner? = null): TaskEngine {
+        val runner = runnerOverride ?: object : TaskRunner {
             override suspend fun run(task: Task): Result<Map<String, Any>> {
                 if (task.goal == "dep2" || task.goal == "dep1_with_delay") {
                     delay(500)
@@ -96,18 +96,25 @@ class TaskDependencySchedulerContractTest {
 
     @Test
     fun failedDependencyBlocksDependent() = runBlocking {
-        val engine = makeEngine()
+        val failingRunner = object : TaskRunner {
+            override suspend fun run(task: Task): Result<Map<String, Any>> =
+                Result.failure(RuntimeException("dep failed"))
+        }
+        val engine = makeEngine(failingRunner)
         val dep = engine.create("dependency")
+        dep.retryBudget = 0
         val dependent = engine.create("dependent", dependsOn = listOf(dep.id))
+        engine.run(dependent.id)
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
 
         engine.run(dep.id)
-        engine.getTask(dep.id)?.fail("dep failed")
-        Thread.sleep(300)
+        val started = System.currentTimeMillis()
+        while (!dep.isTerminal() && System.currentTimeMillis() - started < 5000) delay(20)
+        assertEquals(TaskState.FAILED, dep.state)
 
-        // Dependent should NOT have executed
-        assertFalse(dependent.state == TaskState.RUNNING)
+        // A failed dependency leaves its dependent blocked and recoverable.
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
         assertFalse(dependent.isTerminal())
-        assertTrue(dependent.state == TaskState.QUEUED || dependent.state == TaskState.WAITING_DEPENDENCY)
     }
 
     @Test
@@ -173,15 +180,22 @@ class TaskDependencySchedulerContractTest {
 
     @Test
     fun dependentDoesNotRunWhenDependencyFailed() = runBlocking {
-        val engine = makeEngine()
+        val failingRunner = object : TaskRunner {
+            override suspend fun run(task: Task): Result<Map<String, Any>> =
+                Result.failure(RuntimeException("dep failed"))
+        }
+        val engine = makeEngine(failingRunner)
         val dep = engine.create("dependency")
+        dep.retryBudget = 0
         val dependent = engine.create("dependent", dependsOn = listOf(dep.id))
-
+        engine.run(dependent.id)
         engine.run(dep.id)
-        engine.getTask(dep.id)?.fail("dep failed")
-        Thread.sleep(300)
+        val started = System.currentTimeMillis()
+        while (!dep.isTerminal() && System.currentTimeMillis() - started < 5000) delay(20)
 
-        // Dependent should NOT be RUNNING
+        // The dependent remains blocked rather than being failed or executed.
+        assertEquals(TaskState.FAILED, dep.state)
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
         assertFalse(dependent.state == TaskState.RUNNING)
         assertFalse(dependent.isTerminal())
     }
