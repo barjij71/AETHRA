@@ -125,4 +125,25 @@ class SkillOrchestrationAcceptanceTest {
         registry.register(skill("u", false))
         assertFailsWith<IllegalArgumentException> { registry.enable("u") }
     }
+
+    @Test fun orchestratorPersistsTerminalStepState() = runTest {
+        val registry = SkillRegistry()
+        registry.register(skill("a")); registry.setTrust("a", TrustState.TRUSTED); registry.enable("a")
+        val workflowStore = InMemoryWorkflowStore()
+        val result = Orchestrator(
+            registry = registry,
+            artifactStore = ArtifactStore(),
+            policy = CorePolicyEngine(),
+            executor = SkillExecutor { _, _ -> StepResult(StepResult.Status.SUCCEEDED) },
+            workflowStore = workflowStore
+        ).run(
+            Workflow("wf-store", listOf(WorkflowStep("a", "a"))),
+            "task-store"
+        )
+
+        assertEquals(StepResult.Status.SUCCEEDED, result["a"]?.status)
+        val record = workflowStore.load("wf-store", "task-store")
+        assertNotNull(record)
+        assertEquals(StepResult.Status.SUCCEEDED, record.steps["a"]?.status)
+    }
 }
