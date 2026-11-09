@@ -188,10 +188,7 @@ class PlatformAdapters(private val context: Context) {
 
         override suspend fun run(task: Task): Result<Map<String, Any>> {
             val goal = task.goal.trim()
-            val tool = adapters.toolRegistry.get(goal)
-                ?: adapters.toolRegistry.all()
-                    .sortedByDescending { it.id.length }
-                    .firstOrNull { goal.startsWith(it.id + " ") }
+            val tool = adapters.toolRegistry.resolve(goal)
             if (tool != null) return dispatchTool(tool, task, goal)
             return providerRunner.run(task)
         }
