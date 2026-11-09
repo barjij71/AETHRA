@@ -11,6 +11,8 @@ import org.aethra.assistant.aethra.security.ExecutionPolicy
 import org.aethra.assistant.aethra.security.PolicyEngine
 import org.aethra.assistant.aethra.skills.SkillRegistryAndroid
 import org.aethra.assistant.aethra.tools.ClipboardReadTool
+import org.aethra.assistant.aethra.tools.AppLaunchTool
+import org.aethra.assistant.aethra.tools.AppQueryTool
 import org.aethra.assistant.aethra.tools.DeviceInfoTool
 import org.aethra.assistant.aethra.tools.FileReadTool
 import org.aethra.core.agents.AgentEngine
@@ -129,6 +131,8 @@ class PlatformAdapters(private val context: Context) {
 
     fun registerAndroidTools() {
         toolRegistry.register(DeviceInfoTool(context).tool)
+        toolRegistry.register(AppLaunchTool(context).tool)
+        toolRegistry.register(AppQueryTool(context).tool)
         toolRegistry.register(FileReadTool(context).tool)
         toolRegistry.register(ClipboardReadTool(context).tool)
         toolRegistry.register(
@@ -211,6 +215,8 @@ class PlatformAdapters(private val context: Context) {
             )
             val result = when (tool.id) {
                 "device.info" -> DeviceInfoTool(adapters.context).execute()
+                "app.launch" -> AppLaunchTool(adapters.context).execute(toolArgs(tool, goal)["package"] ?: "")
+                "app.query" -> AppQueryTool(adapters.context).execute(toolArgs(tool, goal)["query"] ?: "")
                 "file.read" -> FileReadTool(adapters.context).execute(toolArgs(tool, goal)["path"] ?: "")
                 "clipboard.read" -> ClipboardReadTool(adapters.context).execute()
                 "memory.remember" -> {
