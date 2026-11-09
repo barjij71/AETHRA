@@ -120,6 +120,7 @@ aethra = AETHRAIntegration()
 
 # ØªÙ‡ÙŠØ¦Ø© hermes_api Ø¨Ø¹Ø¯ ØªØ¹Ø±ÙŠÙ aethra Ù„ØªØ¬Ù†Ø¨ Ø§Ù„Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø§Ù„Ø¯ÙˆØ±ÙŠ
 from ui.hermes_api import HermesAPI
+from devices.notification import notification_manager
 aethra.hermes_api = HermesAPI(
     task_engine=aethra.task_engine,
     memory_engine=aethra.memory_engine,
@@ -128,3 +129,6 @@ aethra.hermes_api = HermesAPI(
     tool_registry=aethra.tool_registry,
     tool_dispatcher=aethra.tool_dispatcher,
 )
+
+aethra.notification_manager = notification_manager
+core_registry.register("notification_manager", notification_manager)
