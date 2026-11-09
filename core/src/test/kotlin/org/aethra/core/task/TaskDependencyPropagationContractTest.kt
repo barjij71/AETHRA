@@ -92,10 +92,10 @@ class TaskDependencyPropagationContractTest {
         waitForTerminal(engine, dep.id)
         assertEquals(TaskState.FAILED, dep.state)
 
-        // Dependent should not become runnable
+        // A failed dependency keeps the dependent blocked and non-terminal.
         engine.run(dependent.id)
-        waitForTerminal(engine, dependent.id)
-        assertEquals(TaskState.FAILED, dependent.state)
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
+        assertFalse(dependent.isTerminal())
     }
 
     @Test
@@ -143,22 +143,19 @@ class TaskDependencyPropagationContractTest {
         val engine = makeEngineWithRunner(runner)
         val dep = engine.create("dep")
         val dependent = engine.create("dependent", dependsOn = listOf(dep.id))
+        dep.retryBudget = 0
+        engine.run(dependent.id)
+        assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
 
         engine.run(dep.id)
         waitForTerminal(engine, dep.id)
         assertEquals(TaskState.FAILED, dep.state)
-
-        // A failed dependency blocks the dependent without making it terminal.
-        engine.run(dependent.id)
         assertEquals(TaskState.WAITING_DEPENDENCY, dependent.state)
 
-        // Retry dep - should succeed on retry
+        // Explicit retry succeeds and automatically wakes the blocked dependent.
         engine.retry(dep.id)
         waitForTerminal(engine, dep.id)
         assertEquals(TaskState.COMPLETED, dep.state)
-
-        // Dependent should become runnable and complete
-        engine.run(dependent.id)
         waitForTerminal(engine, dependent.id)
         assertEquals(TaskState.COMPLETED, dependent.state)
     }
