@@ -51,7 +51,7 @@ class TaskDependencySchedulerContractTest {
     @Test
     fun dependentWaitsForRunningDependency() = runBlocking {
         val engine = makeEngine()
-        val dep = engine.create("dependency")
+        val dep = engine.create("dep1_with_delay")
         val dependent = engine.create("dependent", dependsOn = listOf(dep.id))
 
         engine.run(dep.id)
@@ -196,7 +196,7 @@ class TaskDependencySchedulerContractTest {
     @Test
     fun cancelledDependencyBlocksDependent() = runBlocking {
         val engine = makeEngine()
-        val dep = engine.create("dependency")
+        val dep = engine.create("dep1_with_delay")
         val dependent = engine.create("dependent", dependsOn = listOf(dep.id))
 
         engine.run(dep.id)
