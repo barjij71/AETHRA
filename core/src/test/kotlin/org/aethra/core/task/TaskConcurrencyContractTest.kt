@@ -2,6 +2,7 @@ package org.aethra.core.task
 
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import org.aethra.core.domain.TaskState
 import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.storage.Storage
