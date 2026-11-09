@@ -27,6 +27,7 @@ import org.aethra.core.storage.Storage
 import org.aethra.core.task.Task
 import org.aethra.core.task.TaskEngine
 import org.aethra.core.task.TaskRunner
+import org.aethra.core.task.ProviderTaskRunner
 import org.aethra.core.tools.ToolRegistry
 import org.aethra.core.skills.SkillRegistry
 
