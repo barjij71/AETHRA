@@ -19,7 +19,8 @@ data class Tool(
     val approvalRequired: Boolean = false,
     val reversible: Boolean = false,
     val timeoutSeconds: Int = 30,
-    val native: Boolean = false
+    val native: Boolean = false,
+    val aliases: List<String> = emptyList()
 )
 
 /**
