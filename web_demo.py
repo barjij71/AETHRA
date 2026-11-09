@@ -922,6 +922,94 @@ def memory_page():
     """, memories=memories)
 
 
+# ===== ØµÙØ­Ø© ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ù…Ù‡Ù…Ø© =====
+
+@app.route("/task/<task_id>")
+def task_detail(task_id):
+    """ØµÙØ­Ø© ØªÙØ§ØµÙŠÙ„ Ù…Ù‡Ù…Ø© Ù…Ø­Ø¯Ø¯Ø©."""
+    task = None
+    evidence = None
+    try:
+        task = aethra.task_engine.get_task(task_id)
+        if task:
+            # Ø¬Ù…Ø¹ Ø£Ø¯Ù„Ø© Ø§Ù„ØªÙ†ÙÙŠØ° Ù…Ù† Ø§Ù„Ø°Ø§ÙƒØ±Ø©
+            rec = aethra.memory_engine.read_record("task", f"task:{task_id}:result")
+            if rec:
+                evidence = rec.value
+    except Exception as e:
+        task = None
+        error = str(e)
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ù…Ù‡Ù…Ø© - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 700px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .detail { padding: 15px; border-bottom: 1px solid #eee; }
+            .detail:last-child { border-bottom: none; }
+            .detail-label { font-weight: bold; color: #34495e; }
+            .status-badge { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; }
+            .status-QUEUED { background: #fff3e0; color: #e65100; }
+            .status-RUNNING { background: #e3f2fd; color: #1565c0; }
+            .status-COMPLETED { background: #e8f5e9; color: #2e7d32; }
+            .status-FAILED { background: #ffebee; color: #c62828; }
+            .status-CANCELLED { background: #eceff1; color: #546e7a; }
+            .evidence { background: #e8f4fd; padding: 15px; border-radius: 6px; margin: 10px 0; border-left: 4px solid #3498db; }
+            .back { margin-top: 20px; display: inline-block; color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ“‹ ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ù…Ù‡Ù…Ø©</h1>
+            {% if task %}
+            <div class="detail">
+                <span class="detail-label">Ø§Ù„Ù…Ø¹Ø±Ù:</span> {{ task.id }}
+            </div>
+            <div class="detail">
+                <span class="detail-label">Ø§Ù„Ø§Ø³Ù…:</span> {{ task.name }}
+            </div>
+            <div class="detail">
+                <span class="detail-label">Ø§Ù„Ø­Ø§Ù„Ø©:</span>
+                <span class="status-badge status-{{ task.status }}">{{ task.status }}</span>
+            </div>
+            <div class="detail">
+                <span class="detail-label">Ø§Ù„Ø¹Ø¯Ø¯ Ù…Ø­Ø§ÙˆÙ„Ø§Øª Ø¥Ø¹Ø§Ø¯Ø©:</span> {{ task.retry_count }}
+            </div>
+            <div class="detail">
+                <span class="detail-label">Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ø¥Ù†Ø´Ø§Ø¡:</span> {{ "%.0f"|format(task.created_at) if task.created_at else "-" }}
+            </div>
+            <div class="detail">
+                <span class="detail-label">Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ø¨Ø¯Ø¡:</span> {{ "%.0f"|format(task.started_at) if task.started_at else "-" }}
+            </div>
+            <div class="detail">
+                <span class="detail-label">ÙˆÙ‚Øª Ø§Ù„Ø§Ù†ØªÙ‡Ø§Ø¡:</span> {{ "%.0f"|format(task.completed_at) if task.completed_at else "-" }}
+            </div>
+            {% if task.error %}
+            <div class="detail" style="color: #c62828;">
+                <span class="detail-label">Ø§Ù„Ø®Ø·Ø£:</span> {{ task.error }}
+            </div>
+            {% endif %}
+            {% if evidence %}
+            <div class="evidence">
+                <span class="detail-label">Ø£Ø¯Ù„Ø© Ø§Ù„ØªÙ†ÙÙŠØ°:</span>
+                <pre>{{ evidence }}</pre>
+            </div>
+            {% endif %}
+            {% else %}
+            <p>Ø§Ù„Ù…Ù‡Ù…Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©.</p>
+            {% endif %}
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, task=task, evidence=evidence)
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
