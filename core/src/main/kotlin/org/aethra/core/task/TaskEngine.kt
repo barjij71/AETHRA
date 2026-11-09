@@ -178,19 +178,17 @@ class TaskEngine(
             // Find the terminal state of this dependency
             val depState = tasks[taskId]?.state ?: return@forEach
             println("[C2-DEBUG] onTaskTerminal: depState=$depState, depId=$taskId")
-            // Only terminal-failure (FAILED/CANCELLED/ERROR) propagates failure to dependents.
-            // COMPLETED is handled by wakeReadyDependents() separately (by checking isReady).
-            if (depState !in setOf(TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)) {
+            // Failed and errored dependencies fail their dependents.
+            // A cancelled dependency leaves dependents blocked in their current
+            // non-terminal state; it must never make them runnable.
+            // COMPLETED is handled by wakeReadyDependents() via isReady().
+            if (depState !in setOf(TaskState.FAILED, TaskState.ERROR)) {
                 return@forEach
             }
             val childState = when (depState) {
                 TaskState.FAILED -> TaskState.FAILED
-                TaskState.CANCELLED -> TaskState.CANCELLED
                 TaskState.ERROR -> TaskState.ERROR
-                else -> {
-                    println("[C2-DEBUG] onTaskTerminal: depState=$depState, child.state=${child.state}, children=${children?.size}")
-                    return
-                }
+                else -> return@forEach
             }
             // Dependent is in WAITING_DEPENDENCY: already blocked, just propagate failure
             if (child.state == TaskState.WAITING_DEPENDENCY) {
@@ -216,102 +214,91 @@ class TaskEngine(
     }
 
     private suspend fun execute(task: org.aethra.core.task.Task) {
-        println("[C2-DEBUG] execute called for taskId=${task.id}, state=${task.state}")
-        // Idempotency guard: prevent duplicate execution from race/resume/retry
-        if (task.isExecuted) {
-            println("[C2-DEBUG] execute: task.isExecuted=true, returning early")
-            return
-        }
+        // Idempotency guard: prevent duplicate execution from race/resume/retry.
+        if (task.isExecuted) return
         task.isExecuted = true
-        println("[C2-DEBUG] execute: task.isExecuted set to true")
 
-        // Compute primary result atomically with a coroutine-native timeout.
-        // withTimeout() interrupts the block when the deadline passes, so a blocked
-        // runner does not hang the system. Only TimeoutCancellationException counts
-        // as timeout; a plain TaskExecutionException is a provider failure, not a
-        // timeout, and CancellationException is a natural cancellation.
-        var primaryError: Throwable? = null
-        var isTimeout = false
-        val primaryResult = try {
-            kotlinx.coroutines.withTimeout<Result<Map<String, Any>>>(task.timeoutMs) {
-                @Suppress("UNCHECKED_CAST")
-                val result = runner.run(task) as Result<Map<String, Any>>
-                result
+        var retriesUsed = 0
+        var nextBackoffMs = task.backoffMs.coerceAtLeast(0L)
+
+        while (true) {
+            var failure: Throwable? = null
+            var timedOut = false
+
+            val result = try {
+                withTimeout<Result<Map<String, Any>>>(task.timeoutMs) {
+                    runner.run(task)
+                }
+            } catch (e: TimeoutCancellationException) {
+                timedOut = true
+                failure = TaskExecutionException("execution timeout after ${task.timeoutMs}ms")
+                null
+            } catch (e: CancellationException) {
+                // External cancellation must not be converted into failure or retry.
+                throw e
+            } catch (e: Exception) {
+                // Provider exceptions are retryable failures, unlike cancellation/timeouts.
+                failure = e
+                null
             }
-        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            primaryError = TaskExecutionException("execution timeout after ${task.timeoutMs}ms")
-            isTimeout = true
-            null
-        } catch (e: CancellationException) {
-            // Natural cancellation must not become FAILED or TIMEOUT
-            throw e
-        } catch (e: TaskExecutionException) {
-            // Provider failure: NOT a timeout, not a cancellation
-            primaryError = e
-            null
-        }
 
-        // Check if the runner returned a failure result
-        // Check if the runner returned a failure result
-        val runnerError = (primaryResult as? Result<Map<String, Any>>)?.fold(
-            onSuccess = { null },
-            onFailure = { it }
-        )
-        if (runnerError != null) {
-            // Provider returned a failure result: treat as FAILED
-            if (runnerError is CancellationException) {
-                // Natural cancellation: no failure, no timeout, no retry
+            val returnedFailure = result?.exceptionOrNull()
+            if (returnedFailure is CancellationException) {
+                // A runner may also report cancellation through Result.failure().
                 return
             }
-            task.fail(runnerError.message ?: "execution error")
-            eventBus.publish(TaskEvent(
-                "execution_failed", System.currentTimeMillis(), task.id,
-                TaskState.RUNNING, TaskState.FAILED,
-                mapOf<String, String>("reason" to "provider error")
-            ))
-            // Wake dependents when this task fails
-            onTaskTerminal(task.id)
-            return
-        }
+            val executionError = returnedFailure ?: failure
 
-        if (primaryError != null) {
-            if (isTimeout) {
-                // Timeout: record and fail, but DO NOT retry
-                task.fail(primaryError.message ?: "execution timeout")
+            if (executionError == null) {
+                task.complete()
                 eventBus.publish(TaskEvent(
-                    "execution_timeout", System.currentTimeMillis(), task.id,
-                    TaskState.RUNNING, TaskState.FAILED,
-                    mapOf<String, String>("reason" to "execution timeout")
+                    "execution_completed", System.currentTimeMillis(), task.id,
+                    TaskState.RUNNING, TaskState.COMPLETED,
+                    mapOf("reason" to "success", "attempts" to (retriesUsed + 1).toString())
                 ))
-                // Wake dependents when this task fails (they stay blocked)
                 onTaskTerminal(task.id)
                 return
-            } else if (primaryError is CancellationException) {
-                // Natural cancellation: no failure, no timeout, no retry
-                return
             }
-            // Provider failure: FAILED, with execution_failed event
-            task.fail(primaryError.message ?: "execution error")
+
+            // Timeouts and cancellations are deliberately not retried. Ordinary
+            // provider failures consume the task's configured retry budget.
+            if (!timedOut && retriesUsed < task.retryBudget.coerceAtLeast(0)) {
+                retriesUsed++
+                val waitMs = nextBackoffMs.coerceAtMost(30_000L)
+                eventBus.publish(TaskEvent(
+                    "retry_scheduled", System.currentTimeMillis(), task.id,
+                    TaskState.RUNNING, TaskState.RUNNING,
+                    mapOf(
+                        "attempt" to (retriesUsed + 1).toString(),
+                        "retry" to retriesUsed.toString(),
+                        "delay_ms" to waitMs.toString(),
+                        "reason" to (executionError.message ?: "provider error")
+                    )
+                ))
+                if (waitMs > 0) delay(waitMs)
+                // Do not restart work if the user cancelled the task during backoff.
+                if (task.state != TaskState.RUNNING || task.isCancelled()) return
+                nextBackoffMs = if (nextBackoffMs >= 15_000L) {
+                    30_000L
+                } else {
+                    nextBackoffMs * 2
+                }
+                continue
+            }
+
+            task.fail(executionError.message ?: "execution error")
+            val terminalEvent = if (timedOut) "execution_timeout" else "execution_failed"
             eventBus.publish(TaskEvent(
-                "execution_failed", System.currentTimeMillis(), task.id,
+                terminalEvent, System.currentTimeMillis(), task.id,
                 TaskState.RUNNING, TaskState.FAILED,
-                mapOf<String, String>("reason" to "provider error")
+                mapOf(
+                    "reason" to if (timedOut) "execution timeout" else "provider error",
+                    "attempts" to (retriesUsed + 1).toString()
+                )
             ))
-            // Wake dependents when this task fails (they stay blocked)
             onTaskTerminal(task.id)
             return
         }
-
-        // Success: runner returned success
-        task.complete()
-        eventBus.publish(TaskEvent(
-            "execution_completed", System.currentTimeMillis(), task.id,
-            TaskState.RUNNING, TaskState.COMPLETED,
-            mapOf<String, String>("reason" to "success")
-        ))
-        // Wake dependents when this task completes successfully
-        onTaskTerminal(task.id)
-        return
     }
 
     fun approve(taskId: String, granted: Boolean, reason: String) {
