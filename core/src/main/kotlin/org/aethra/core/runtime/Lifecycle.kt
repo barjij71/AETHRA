@@ -22,7 +22,7 @@ interface Lifecycle {
 class LifecycleImpl(
     private val storage: Storage,
     private val config: CoreConfig,
-    private val taskEngine: TaskEngine,
+    private val taskEngineProvider: () -> TaskEngine,
     private val memoryEngine: MemoryEngine,
     private val toolRegistry: ToolRegistry,
     private val providerSystem: ProviderSystem,
@@ -39,6 +39,7 @@ class LifecycleImpl(
 
     override fun start(): Result<Unit> = try {
         _state = CoreState.RUNNING
+        val taskEngine = taskEngineProvider()
         health = Health(true, taskEngine.activeCount, taskEngine.queuedCount, 0)
         Result.success(Unit)
     } catch (e: Exception) {
@@ -46,7 +47,7 @@ class LifecycleImpl(
     }
 
     override fun stop(): Result<Unit> = try {
-        taskEngine.close()
+        taskEngineProvider().close()
         _state = CoreState.STOPPED
         health = Health(false, 0, 0, 0)
         Result.success(Unit)
