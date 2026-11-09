@@ -1767,6 +1767,25 @@ def run_task_route(task_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/tasks/<task_id>/run", methods=["POST"])
+def run_task_route(task_id):
+    try:
+        task = aethra.task_engine.get_task(task_id)
+        if task is None:
+            return jsonify({"success": False, "error": "Task not found"}), 404
+        if task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskState.CANCELLED]:
+            return jsonify({"success": False, "error": f"Task already in {task.status} state"}), 400
+        result = aethra.task_runner.run_task(task)
+        return jsonify({
+            "success": True,
+            "task_id": task_id,
+            "status": task.status.value,
+            "output": result.output if hasattr(result, 'output') else str(result),
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
