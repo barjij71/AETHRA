@@ -1,5 +1,6 @@
 package org.aethra.assistant.aethra.tools
 
+import android.content.ClipboardManager
 import android.content.Context
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.tools.Tool
@@ -79,5 +80,40 @@ class FileReadTool(private val context: Context) {
         file.canonicalFile
     } catch (e: Exception) {
         null
+    }
+}
+
+/**
+ * Real Android clipboard reader. Mirrors the NativeTools declaration
+ * `clipboard.read` (READ_ONLY, non-privileged). Reading the focused app's own
+ * clipboard needs no additional permission.
+ */
+class ClipboardReadTool(private val context: Context) {
+    val tool = Tool(
+        id = "clipboard.read",
+        description = "Return the current clipboard text",
+        category = "system",
+        requiredCapabilities = listOf("clipboard.read"),
+        outputSchema = mapOf("text" to "string"),
+        riskClass = RiskClass.READ_ONLY,
+        approvalRequired = false,
+        reversible = true,
+        timeoutSeconds = 10,
+        native = true
+    )
+
+    suspend fun execute(): Result<Map<String, Any>> {
+        return try {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val text = cm?.primaryClip?.getItemAt(0)?.text?.toString()
+            Result.success(
+                mapOf(
+                    "text" to (text ?: ""),
+                    "has_text" to (!text.isNullOrEmpty()).toString()
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }
