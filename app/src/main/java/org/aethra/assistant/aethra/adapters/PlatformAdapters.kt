@@ -147,6 +147,36 @@ class PlatformAdapters(private val context: Context) {
         )
     }
 
+    fun registerBuiltInSkills() {
+        val deviceInfoSkill = org.aethra.core.skills.Skill(
+            id = "android.device-info",
+            name = "Android Device Info",
+            version = "1.0.0",
+            description = "Read live Android device information through the device.info tool.",
+            entrypoints = listOf("device.info"),
+            capabilities = listOf("device.info"),
+            platforms = listOf("android"),
+            riskClass = RiskClass.READ_ONLY,
+            enabled = true,
+            state = org.aethra.core.skills.SkillState.INSTALLED
+        )
+        skillRegistry.register(deviceInfoSkill)
+
+        val memorySkill = org.aethra.core.skills.Skill(
+            id = "core.memory",
+            name = "Persistent Memory",
+            version = "1.0.0",
+            description = "Persist user-provided memory locally through the memory.remember tool.",
+            entrypoints = listOf("memory.remember"),
+            capabilities = listOf("memory.write"),
+            platforms = listOf("android"),
+            riskClass = RiskClass.REVERSIBLE,
+            enabled = true,
+            state = org.aethra.core.skills.SkillState.INSTALLED
+        )
+        skillRegistry.register(memorySkill)
+    }
+
     inner class AndroidTaskDispatcher(
         private val adapters: PlatformAdapters
     ) : TaskRunner {
