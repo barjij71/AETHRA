@@ -77,6 +77,15 @@ class Task(
         }
     }
 
+    /** Reset one-shot guards when an explicit retry starts a new execution cycle. */
+    fun resetForRetry() {
+        _executed = false
+        _completed = false
+        _failed = false
+        _cancelled = false
+        note = ""
+    }
+
     fun isCancelled(): Boolean = _cancelled
     fun isTerminal(): Boolean = state in setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)
 
