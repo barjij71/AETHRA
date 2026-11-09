@@ -85,7 +85,15 @@ fun AthraHomePage(runtime: Runtime) {
             Text("No tasks yet.", style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn {
-                items(tasks) { t -> Text(t.id + "  [" + t.state + "]  " + t.goal) }
+                items(tasks) { t ->
+                    Text(t.id + "  [" + t.state + "]  " + t.goal)
+                    if (t.note.isNotBlank()) {
+                        Text(
+                            t.note,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
         }
 

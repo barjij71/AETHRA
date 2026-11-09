@@ -10,8 +10,12 @@ import org.aethra.assistant.aethra.memory.MemoryAndroid
 import org.aethra.assistant.aethra.security.ExecutionPolicy
 import org.aethra.assistant.aethra.security.PolicyEngine
 import org.aethra.assistant.aethra.skills.SkillRegistryAndroid
+import org.aethra.assistant.aethra.tools.ClipboardReadTool
 import org.aethra.assistant.aethra.tools.DeviceInfoTool
+import org.aethra.assistant.aethra.tools.FileReadTool
 import org.aethra.core.agents.AgentEngine
+import org.aethra.core.domain.AuditEntry
+import org.aethra.core.domain.RiskClass
 import org.aethra.core.memory.MemoryEngine
 import org.aethra.core.providers.ModelRegistry
 import org.aethra.core.providers.ProviderModelRouter
@@ -23,12 +27,15 @@ import org.aethra.core.runtime.LifecycleImpl
 import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
+import org.aethra.core.skills.Skill
+import org.aethra.core.skills.SkillState
 import org.aethra.core.storage.Storage
 import org.aethra.core.task.Task
 import org.aethra.core.task.TaskEngine
 import org.aethra.core.task.TaskRunner
 import org.aethra.core.task.ProviderTaskRunner
 
+import org.aethra.core.tools.Tool
 import org.aethra.core.tools.ToolRegistry
 import org.aethra.core.skills.SkillRegistry
 
@@ -118,11 +125,58 @@ class PlatformAdapters(private val context: Context) {
         taskRunner
     )
 
+    val policyEngine = PolicyEngine()
+
     val memoryAndroid = MemoryAndroid(memoryEngine)
     val skillRegistryAndroid = SkillRegistryAndroid(skillRegistry)
 
+    /** Android-implemented native tools: declared in core NativeTools, executed here. */
+    private val androidToolInstances = listOf(
+        DeviceInfoTool(context),
+        FileReadTool(context),
+        ClipboardReadTool(context)
+    )
+
+    /** Executor for every Android-implemented tool, keyed by tool id. */
+    private val androidToolExecutors: Map<String, suspend (Map<String, String>) -> Result<Map<String, Any>>> =
+        mapOf(
+            "device.info" to { _ -> DeviceInfoTool(context).execute() },
+            "file.read" to { args -> FileReadTool(context).execute(args["path"] ?: "") },
+            "clipboard.read" to { _ -> ClipboardReadTool(context).execute() }
+        )
+
     fun registerAndroidTools() {
-        toolRegistry.register(DeviceInfoTool(context).tool)
+        for (instance in androidToolInstances) {
+            toolRegistry.register(instance.tool)
+        }
+        registerBuiltinSkills()
+    }
+
+    /**
+     * Register real built-in skills backed by native Android tools through the
+     * existing SkillRegistry architecture (INSTALLED state, persisted). A
+     * skill's capabilities map to ToolRegistry tools, so execution stays on
+     * the normal Skill -> ToolRegistry -> policy -> AuditLog path. No fake
+     * skill list is exposed to the UI: these skills are executable via the
+     * normal task path and can be enabled/disabled through the registry.
+     */
+    private fun registerBuiltinSkills() {
+        for (instance in androidToolInstances) {
+            val tool = instance.tool
+            skillRegistryAndroid.register(
+                Skill(
+                    id = "builtin." + tool.id,
+                    name = "Android " + tool.category + " " + tool.id,
+                    description = tool.description,
+                    entrypoints = listOf(tool.id),
+                    capabilities = tool.requiredCapabilities,
+                    platforms = listOf("android"),
+                    riskClass = tool.riskClass,
+                    state = SkillState.INSTALLED,
+                    enabled = true
+                )
+            )
+        }
     }
 
     inner class AndroidTaskDispatcher(
@@ -135,13 +189,84 @@ class PlatformAdapters(private val context: Context) {
         )
 
         override suspend fun run(task: Task): Result<Map<String, Any>> {
-            val toolId = task.goal.trim()
-            val tool = adapters.toolRegistry.get(toolId)
-            return when (tool?.id) {
-                "device.info" -> DeviceInfoTool(adapters.context).execute()
-                null -> providerRunner.run(task)
-                else -> Result.failure(Exception("unsupported local tool id: " + tool.id))
-            }
+            val goal = task.goal.trim()
+            val tool = resolveTool(goal)
+            if (tool != null) return dispatchTool(tool, task, goal)
+            return providerRunner.run(task)
         }
+
+        /** Exact tool id first, then a registered skill mapped via its capabilities. */
+        private fun resolveTool(goal: String): Tool? {
+            adapters.toolRegistry.get(goal)?.let { return it }
+            val skill = adapters.skillRegistryAndroid.find(goal)
+                ?: adapters.skillRegistryAndroid.get(goal)
+            val mapped = skill?.let { adapters.toolRegistry.toolsForSkill(it).firstOrNull() }
+            return mapped?.let { adapters.toolRegistry.get(it) }
+        }
+
+        /**
+         * Dispatch a native tool through the existing policy path:
+         * PolicyEngine -> audit -> execution. No privileged action runs without
+         * its declared risk being checked. Because there is no approval UI on
+         * this branch yet, approval-required tools fail truthfully instead of
+         * bypassing the approval gate.
+         */
+        private suspend fun dispatchTool(tool: Tool, task: Task, goal: String): Result<Map<String, Any>> {
+            val executor = adapters.androidToolExecutors[tool.id]
+                ?: return Result.failure(Exception(
+                    "tool " + tool.id + " is declared but has no Android implementation yet"))
+            if (!adapters.policyEngine.allows(tool.riskClass, tool)) {
+                adapters.auditLog.record(
+                    entry("tool.policy.reject", task.id, tool.id, tool.riskClass, "DENIED", "policy rejected")
+                )
+                return Result.failure(Exception("policy.reject: " + tool.id))
+            }
+            if (tool.approvalRequired || tool.riskClass.level >= RiskClass.SENSITIVE.level) {
+                adapters.auditLog.record(
+                    entry("tool.permission.request", task.id, tool.id, tool.riskClass, "PENDING", "approval required")
+                )
+                return Result.failure(Exception("permission_required: " + tool.id))
+            }
+            adapters.auditLog.record(
+                entry("tool.execution.grant", task.id, tool.id, tool.riskClass, "GRANTED", "approved")
+            )
+            val result = executor(toolArgs(tool, goal))
+            if (result.isSuccess) {
+                adapters.auditLog.record(
+                    entry("tool.execution.success", task.id, tool.id, tool.riskClass, "GRANTED", "success")
+                )
+            } else {
+                adapters.auditLog.record(
+                    entry(
+                        "tool.execution.failure", task.id, tool.id, tool.riskClass, "DENIED",
+                        result.exceptionOrNull()?.message ?: "execution error"
+                    )
+                )
+            }
+            return result
+        }
+
+        /** Trailing text after the tool id in the goal is passed as tool args. */
+        private fun toolArgs(tool: Tool, goal: String): Map<String, String> {
+            val rest = goal.removePrefix(tool.id).trim()
+            return if (rest.isEmpty()) emptyMap() else mapOf("path" to rest)
+        }
+
+        private fun entry(
+            operation: String,
+            target: String,
+            toolId: String,
+            risk: RiskClass,
+            decision: String,
+            outcome: String
+        ): AuditEntry = AuditEntry(
+            id = java.util.UUID.randomUUID().toString(),
+            actor = "aethra.runtime",
+            operation = operation,
+            target = target,
+            riskClass = risk,
+            decision = decision,
+            outcome = outcome
+        )
     }
 }
