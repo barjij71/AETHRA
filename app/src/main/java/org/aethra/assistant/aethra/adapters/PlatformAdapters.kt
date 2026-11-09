@@ -34,6 +34,7 @@ import org.aethra.core.task.TaskRunner
 import org.aethra.core.task.ProviderTaskRunner
 
 import org.aethra.core.tools.ToolRegistry
+import org.aethra.core.tools.Tool
 import org.aethra.core.skills.SkillRegistry
 
 class AndroidStorage(private val context: Context) : Storage {
@@ -130,6 +131,20 @@ class PlatformAdapters(private val context: Context) {
         toolRegistry.register(DeviceInfoTool(context).tool)
         toolRegistry.register(FileReadTool(context).tool)
         toolRegistry.register(ClipboardReadTool(context).tool)
+        toolRegistry.register(
+            org.aethra.core.tools.Tool(
+                id = "memory.remember",
+                description = "Persist a user-provided memory entry locally",
+                category = "memory",
+                requiredCapabilities = listOf("memory.write"),
+                inputSchema = mapOf("text" to "memory text"),
+                outputSchema = mapOf("memoryId" to "id", "text" to "stored text"),
+                riskClass = RiskClass.REVERSIBLE,
+                approvalRequired = false,
+                reversible = true,
+                timeoutSeconds = 10
+            )
+        )
     }
 
     inner class AndroidTaskDispatcher(
@@ -168,6 +183,27 @@ class PlatformAdapters(private val context: Context) {
                 "device.info" -> DeviceInfoTool(adapters.context).execute()
                 "file.read" -> FileReadTool(adapters.context).execute(toolArgs(tool, goal)["path"] ?: "")
                 "clipboard.read" -> ClipboardReadTool(adapters.context).execute()
+                "memory.remember" -> {
+                    val text = goal.removePrefix(tool.id).trim()
+                    if (text.isEmpty()) {
+                        Result.failure(Exception("memory.remember requires non-empty text"))
+                    } else {
+                        val memory = adapters.memoryAndroid.add(
+                            category = org.aethra.core.memory.MemoryCategory.KNOWLEDGE,
+                            text = text,
+                            source = "user",
+                            taskId = task.id
+                        )
+                        Result.success(
+                            mapOf(
+                                "taskId" to task.id,
+                                "toolId" to tool.id,
+                                "memoryId" to memory.id,
+                                "text" to memory.text
+                            )
+                        )
+                    }
+                }
                 else -> return Result.failure(Exception("tool " + tool.id + " has no Android implementation"))
             }
             if (result.isSuccess) {
