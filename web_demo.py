@@ -18,6 +18,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for
+from flask_socketio import SocketIO, emit
 
 from core.integration import aethra
 from core.task import TaskStatus
@@ -31,7 +32,21 @@ from providers.mock import MockProvider
 from providers.ollama import OllamaProvider
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'aethra-demo-secret'
+socketio = SocketIO(app, cors_allowed_origins="*")
 
+@socketio.on('connect')
+def handle_connect():
+    emit('connected', {'data': 'ØªÙ… Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…'})
+
+@socketio.on('task_created')
+def handle_task_created(data):
+    emit('task_notification', {
+        'task_id': data.get('task_id'),
+        'name': data.get('name'),
+        'status': data.get('status'),
+        'message': f'ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ù…Ù‡Ù…Ø© Ø¬Ø¯ÙŠØ¯Ø©: {data.get("name")}'
+    }, broadcast=True)
 # HTML í…œí”ŒÙŠØª Ù…Ø¹ Ø¯Ø¹Ù… Ø§Ù„Ø¹Ø±Ø¨ÙŠØ© Ø§Ù„ÙƒØ§Ù…Ù„
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -800,6 +815,16 @@ def create_task_page():
                     )
                 except Exception:
                     pass
+                # Ø¥Ø±Ø³Ø§Ù„ Ø­Ø¯Ø« WebSocket Ù„Ù„ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù„Ø­Ø¸ÙŠ
+                try:
+                    socketio.emit('task_notification', {
+                        'task_id': task_id,
+                        'name': name,
+                        'status': task.status.value,
+                        'message': f'ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ù…Ù‡Ù…Ø© Ø¬Ø¯ÙŠØ¯Ø©: {name}'
+                    }, broadcast=True)
+                except Exception:
+                    pass
             except Exception as e:
                 result = {"success": False, "error": str(e)}
 
@@ -1088,4 +1113,4 @@ if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
     print("   Ø£Ùˆ Ù…Ù† Ø®Ù„Ø§Ù„ instabox: instabox-port publish 5000")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
