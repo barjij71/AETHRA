@@ -245,7 +245,9 @@ class TaskEngine(
             // used by normal task execution. A sensitive dependent becomes
             // WAITING_APPROVAL instead of being auto-started by the wake-up path.
             if (task.riskClass.level >= RiskClass.SENSITIVE.level) {
-                transition(task, TaskState.APPROVED)
+                // A dependency wake-up still requires approval, but must enter
+                // WAITING_APPROVAL directly because APPROVED is the post-approval
+                // execution state and cannot transition back to an approval gate.
                 transition(task, TaskState.WAITING_APPROVAL)
                 persist()
                 return
