@@ -150,6 +150,11 @@ HTML_TEMPLATE = """
             <div class="task-item">
                 <span>{{ task.name }}</span>
                 <span class="status-badge status-{{ task.status }}">{{ task.status }}</span>
+                {% if task.status == "RUNNING" %}
+                <form method="POST" action="/tasks/{{ task.id }}/cancel" style="display:inline;margin-left:10px;">
+                    <button type="submit" style="background:#e74c3c;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Ø¥Ù„ØºØ§Ø¡</button>
+                </form>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
