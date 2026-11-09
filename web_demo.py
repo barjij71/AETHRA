@@ -1208,6 +1208,143 @@ def providers_config():
     """, providers=providers_info, message=message)
 
 
+# ===== ØµÙØ­Ø© Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ù†Ø¸Ø§Ù… Ø§Ù„ÙƒØ§Ù…Ù„ =====
+
+@app.route("/system-test")
+def system_test_page():
+    """ØµÙØ­Ø© Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ù†Ø¸Ø§Ù… Ø§Ù„ÙƒØ§Ù…Ù„ Ù…Ù† Ø§Ù„Ù†Ù‡Ø§ÙŠØ© Ù„Ù„Ù†Ù‡Ø§ÙŠØ©."""
+    test_result = None
+    try:
+        from core.integration import aethra as _aethra
+        from core.task import TaskStatus
+        
+        # Ø§Ù„Ø®Ø·ÙˆØ© 1: Ø¥Ù†Ø´Ø§Ø¡ Ù…Ù‡Ù…Ø©
+        task_id = _aethra.task_engine.create_task(
+            "system_test_task", "shell.exec",
+            metadata={"command": "echo 'AETHRA System Test Success'", "actor": "system_test"},
+        )
+        task = _aethra.task_engine.get_task(task_id)
+        
+        # Ø§Ù„Ø®Ø·ÙˆØ© 2: Ø·Ù„Ø¨ Ø§Ù„ØªÙ†ÙÙŠØ° Ø¹Ø¨Ø± ToolDispatcher (ÙŠÙ…Ø± Ø¹Ø¨Ø± Policy/Permission)
+        gate = _aethra.tool_dispatcher.request_execution(
+            tool_id="shell.exec",
+            params={"command": "echo 'AETHRA System Test Success'"},
+            actor="system_test",
+        )
+        _aethra.tool_dispatcher.approve_gate(gate.tool_id, "system_test")
+        
+        # Ø§Ù„Ø®Ø·ÙˆØ© 3: Ø§Ù„ØªÙ†ÙÙŠØ°
+        exec_result = _aethra.tool_dispatcher.execute(
+            tool_id="shell.exec",
+            params={"command": "echo 'AETHRA System Test Success'"},
+            actor="system_test",
+            gate_id=gate.tool_id,
+        )
+        
+        # Ø§Ù„Ø®Ø·ÙˆØ© 4: Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ù†ØªÙŠØ¬Ø©
+        verif_result = _aethra.verification_engine.verify(
+            action="system_test",
+            actual=exec_result.output,
+            expected="AETHRA System Test Success",
+            action_type="shell_output",
+        )
+        
+        # Ø§Ù„Ø®Ø·ÙˆØ© 5: Ø¥Ù†Ø´Ø§Ø¡ Ø¥Ø´Ø¹Ø§Ø±
+        _aethra.notification_manager.notify_task_completed(
+            task_id=task_id,
+            task_name="system_test_task",
+        )
+        
+        # Ø§Ù„Ø®Ø·ÙˆØ© 6: ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù…Ù‡Ù…Ø©
+        if exec_result.success:
+            task.mark_completed(exec_result.output)
+        
+        test_result = {
+            "success": exec_result.success and verif_result.passed,
+            "task_id": task_id,
+            "task_name": "system_test_task",
+            "task_status": task.status.value,
+            "command_output": exec_result.output.strip() if exec_result.output else "",
+            "verification_passed": verif_result.passed,
+            "verification_message": verif_result.message,
+            "notification_created": True,
+            "steps": [
+                {"step": "Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ù…Ù‡Ù…Ø©", "status": "âœ“ Ù…ÙƒØªÙ…Ù„", "detail": f"Ø§Ù„Ù…Ø¹Ø±Ù: {task_id[:8]}"},
+                {"step": "Ø·Ù„Ø¨ Ø§Ù„ØªÙ†ÙÙŠØ°", "status": "âœ“ Ù…ÙƒØªÙ…Ù„", "detail": "ØªÙ… Ø§Ù„Ù…Ø±ÙˆØ± Ø¹Ø¨Ø± Policy/Permission"},
+                {"step": "Ø§Ù„ØªÙ†ÙÙŠØ°", "status": "âœ“ Ù…ÙƒØªÙ…Ù„" if exec_result.success else "âœ— ÙØ´Ù„", "detail": exec_result.output.strip() if exec_result.output else exec_result.error},
+                {"step": "Ø§Ù„ØªØ­Ù‚Ù‚", "status": "âœ“ Ù…ÙƒØªÙ…Ù„" if verif_result.passed else "âœ— ÙØ´Ù„", "detail": verif_result.message},
+                {"step": "Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±", "status": "âœ“ Ù…ÙƒØªÙ…Ù„", "detail": "ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø¥Ø´Ø¹Ø§Ø± Ø¥ØªÙ…Ø§Ù… Ø§Ù„Ù…Ù‡Ù…Ø©"},
+            ],
+        }
+    except Exception as e:
+        test_result = {
+            "success": False,
+            "error": str(e),
+        }
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ù†Ø¸Ø§Ù… - AETHRA Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; background: #f5f5f5; }
+            .container { max-width: 700px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            h1 { color: #333; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .test-result { padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .test-result.success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+            .test-result.failed { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+            .test-step { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+            .test-step:last-child { border-bottom: none; }
+            .step-status { font-weight: bold; }
+            .step-detail { color: #555; font-size: 13px; }
+            .btn { background: #3498db; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; margin: 10px 0; }
+            .btn:hover { background: #2980b9; }
+            .back { display: inline-block; color: #3498db; text-decoration: none; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>ðŸ§ª Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ù†Ø¸Ø§Ù… Ø§Ù„ÙƒØ§Ù…Ù„</h1>
+            
+            <button class="btn" onclick="location.href='location.href'">Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„ØªØ´ØºÙŠÙ„</button>
+            
+            {% if test_result %}
+            {% if test_result.success %}
+            <div class="test-result success">
+                <h2>âœ… Ù†Ø¬Ø­ Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ù†Ø¸Ø§Ù… Ø¨Ø§Ù„ÙƒØ§Ù…Ù„!</h2>
+                <p><strong>Ø§Ù„Ù…Ù‡Ù…Ø©:</strong> {{ test_result.task_name }}</p>
+                <p><strong>Ø§Ù„Ù…Ø¹Ø±Ù:</strong> {{ test_result.task_id[:8] }}</p>
+                <p><strong>Ø§Ù„Ø­Ø§Ù„Ø©:</strong> {{ test_result.task_status }}</p>
+                <p><strong>Ù…Ø®Ø±Ø¬Ø§Øª Ø§Ù„Ø£Ù…Ø±:</strong> {{ test_result.command_output }}</p>
+                <p><strong>Ø§Ù„ØªØ­Ù‚Ù‚:</strong> {{ test_result.verification_message }}</p>
+                <p><strong>Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±:</strong> ØªÙ… Ø¥Ù†Ø´Ø§Ø¤Ù‡ Ø¨Ù†Ø¬Ø§Ø­</p>
+            </div>
+            {% else %}
+            <div class="test-result failed">
+                <h2>âŒ ÙØ´Ù„ Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ù†Ø¸Ø§Ù…</h2>
+                <p><strong>Ø§Ù„Ø®Ø·Ø£:</strong> {{ test_result.error }}</p>
+            </div>
+            {% endif %}
+            
+            <h3>Ø®Ø·ÙˆØ§Øª Ø§Ù„Ø§Ø®ØªØ¨Ø§Ø±:</h3>
+            {% for step in test_result.steps %}
+            <div class="test-step">
+                <span>{{ step.step }}</span>
+                <span class="step-status">{{ step.status }}</span>
+                <span class="step-detail">{{ step.detail }}</span>
+            </div>
+            {% endfor %}
+            {% endif %}
+            
+            <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </div>
+    </body>
+    </html>
+    """, test_result=test_result)
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
