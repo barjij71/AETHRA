@@ -109,7 +109,7 @@ class TaskEngine(
         }
     }
 
-    private fun startTaskLocked(task: Task, reason: String) {
+    private fun startTaskLocked(task: Task, reason: String): TaskState {
         transition(task, TaskState.RUNNING)
         running.add(task.id)
         eventBus.publish(TaskEvent(
@@ -117,9 +117,10 @@ class TaskEngine(
             TaskState.APPROVED, TaskState.RUNNING,
             mapOf("reason" to reason)
         ))
-        // Create the Job before starting it so cancellation/pause can never race
-        // with coroutine startup and miss the job handle. A CoroutineStart.LAZY job
-        // is inserted into the registry first, then explicitly started.
+        // The ATOMIC start guarantees the coroutine begins even if cancellation
+        // races with startup, while still dispatching asynchronously so run()
+        // preserves its RUNNING contract. The gate inside execute() refuses to
+        // run a fresh cycle for a task that has since been cancelled or paused.
         val job = scope.launch(start = CoroutineStart.ATOMIC) {
             try {
                 execute(task)
@@ -132,9 +133,10 @@ class TaskEngine(
             }
         }
         jobs[task.id] = job
-        // ATOMIC guarantees the coroutine begins even if cancellation races with startup,
-        // while still scheduling it asynchronously so run() preserves its RUNNING
-        // contract for fast/synchronous runners.
+        // Snapshot reported before the coroutine can outrun the caller and
+        // complete an instantly-executable task: run() must report the state
+        // at initiation (RUNNING), not whatever the task became meanwhile.
+        return TaskState.RUNNING
     }
 
     private fun drainQueue() {
@@ -193,9 +195,9 @@ class TaskEngine(
         }
 
         transition(task, TaskState.APPROVED)
-        startTaskLocked(task, "started")
+        val initiated = startTaskLocked(task, "started")
         persist()
-        task.state
+        initiated
     }
 
     // --- Dependency scheduling integration ---
@@ -254,9 +256,14 @@ class TaskEngine(
     }
 
     private suspend fun execute(task: org.aethra.core.task.Task) {
-        // Idempotency guard: prevent duplicate execution from race/resume/retry.
-        if (task.isExecuted) return
-        task.isExecuted = true
+        // Startup gate: if the task was cancelled or paused between the start
+        // dispatch and the first coroutine run, do not begin a fresh cycle.
+        // A cancelled task must never execute work outside the approval chain.
+        if (task.isCancelled() || task.state != TaskState.RUNNING) return
+        // Atomic claim of the one-shot cycle: exactly one racing duplicate
+        // proceeds; losers return and leave the guard false so a later pause/
+        // resume or explicit retry can start a clean cycle.
+        if (!task.claimExecution()) return
 
         var retriesUsed = 0
         var nextBackoffMs = task.backoffMs.coerceAtLeast(0L)

@@ -4,6 +4,7 @@ import org.aethra.core.domain.RiskClass
 import org.aethra.core.domain.Task
 import org.aethra.core.domain.TaskState
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** A single unit of work owned by the AETHRA core. */
 class Task(
@@ -38,9 +39,17 @@ class Task(
     var backoffMs: Long = 1000
         private set
     var isExecuted: Boolean
-        get() = _executed
-        set(value) { _executed = value }
-    private var _executed = false
+        get() = _executed.get()
+        set(value) { _executed.set(value) }
+
+    /**
+     * Atomically claims the one-shot execution cycle. Returns true for the
+     * caller that owns the cycle; all racing duplicates observe false. This
+     * prevents duplicate runner execution when start/pause/resume race.
+     */
+    fun claimExecution(): Boolean = _executed.compareAndSet(false, true)
+
+    private val _executed = AtomicBoolean(false)
 
     fun setTimeoutMs(ms: Long) {
         if (ms < 0) throw IllegalArgumentException("timeoutMs must be >= 0")
@@ -73,7 +82,7 @@ class Task(
 
     /** Reset one-shot guards when an explicit retry starts a new execution cycle. */
     fun resetForRetry() {
-        _executed = false
+        _executed.set(false)
         _completed = false
         _failed = false
         _cancelled = false
@@ -124,14 +133,14 @@ class Task(
             TaskState.PREPARING,
             TaskState.APPROVED -> {
                 state = TaskState.QUEUED
-                _executed = false
+                _executed.set(false)
                 _completed = false
                 _failed = false
                 _cancelled = false
             }
             else -> {
                 state = persistedState
-                _executed = persistedExecuted
+                _executed.set(persistedExecuted)
                 _completed = persistedState == TaskState.COMPLETED
                 _failed = persistedState == TaskState.FAILED
                 _cancelled = persistedState == TaskState.CANCELLED

@@ -95,6 +95,11 @@ class TaskConcurrencyContractTest {
         val runningDeadline = System.currentTimeMillis() + 1000
         while (task.state != TaskState.RUNNING && System.currentTimeMillis() < runningDeadline) delay(10)
         assertEquals(TaskState.RUNNING, task.state)
+        // Make pause land mid-execution deterministically: wait for the first
+        // runner cycle to actually start, regardless of coroutine dispatch timing.
+        val firstCallDeadline = System.currentTimeMillis() + 1000
+        while (calls.isEmpty() && System.currentTimeMillis() < firstCallDeadline) delay(10)
+        assertTrue(calls.isNotEmpty())
 
         engine.pause(task.id)
         assertEquals(TaskState.PAUSED, task.state)
@@ -137,6 +142,10 @@ class TaskConcurrencyContractTest {
         }
 
         assertEquals(TaskState.RUNNING, second.state)
+        // Runner invocation is dispatched asynchronously; wait for the runner
+        // call to be recorded before asserting the execution accounting.
+        val secondCallDeadline = System.currentTimeMillis() + 3000
+        while (calls.none { it == "second" } && System.currentTimeMillis() < secondCallDeadline) delay(20)
         assertEquals(1, calls.count { it == "second" })
         engine.cancel(second.id)
     }

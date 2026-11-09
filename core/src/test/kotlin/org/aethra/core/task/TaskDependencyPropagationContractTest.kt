@@ -36,7 +36,15 @@ class TaskDependencyPropagationContractTest {
 
     @Test
     fun multipleDependenciesRequireAllCompleted() = runBlocking {
-        val engine = makeEngine()
+        // "t2" delays deterministically: the queue auto-drain may legitimately
+        // start it as soon as capacity frees, and without a delay an instant
+        // runner can complete it before the blocked-dependent assertion below.
+        val engine = makeEngineWithRunner(object : TaskRunner {
+            override suspend fun run(task: Task): Result<Map<String, Any>> {
+                if (task.goal == "t2") delay(500)
+                return Result.success(mapOf("ok" to "ok"))
+            }
+        })
         val t1 = engine.create("t1")
         val t2 = engine.create("t2")
         val dependent = engine.create("dependent", dependsOn = listOf(t1.id, t2.id))
