@@ -66,8 +66,11 @@ class Runtime(private val context: Context) {
             )
 
             platform.registerAndroidTools()
+            platform.bindCoreTaskEngine(core.taskEngine)
             registry = core
             adapters = platform
+
+            platform.memoryAndroid.initialize()
 
             val result = platform.lifecycle.start()
             if (result.isSuccess) {
