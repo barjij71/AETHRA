@@ -72,6 +72,7 @@ class Runtime(private val context: Context) {
             adapters = platform
 
             platform.memoryAndroid.initialize()
+            platform.registerBuiltInSkills()
 
             val result = platform.lifecycle.start()
             if (result.isSuccess) {
