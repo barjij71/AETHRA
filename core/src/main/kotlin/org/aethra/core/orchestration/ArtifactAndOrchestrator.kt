@@ -41,7 +41,8 @@ class Orchestrator(
     private val artifactStore: ArtifactStore,
     private val policy: PolicyEngine,
     private val executor: SkillExecutor,
-    private val maxParallelism: Int = 2
+    private val maxParallelism: Int = 2,
+    private val workflowStore: WorkflowStore = InMemoryWorkflowStore()
 ) {
     suspend fun run(workflow: Workflow, taskId: String): Map<String, StepResult> {
         require(maxParallelism > 0) { "maxParallelism must be positive" }
@@ -51,6 +52,25 @@ class Orchestrator(
         val results = LinkedHashMap<String, StepResult>()
         val remaining = workflow.steps.toMutableList()
         val active = mutableMapOf<String, Deferred<StepResult>>()
+
+        fun persistState() {
+            workflowStore.save(
+                WorkflowExecutionRecord(
+                    workflowId = workflow.id,
+                    taskId = taskId,
+                    steps = results.mapValues { (id, result) ->
+                        StepExecutionRecord(
+                            stepId = id,
+                            status = result.status,
+                            reason = result.reason,
+                            artifactId = result.output?.id
+                        )
+                    }
+                )
+            )
+        }
+
+        persistState()
 
         coroutineScope {
             while (remaining.isNotEmpty() || active.isNotEmpty()) {
@@ -67,6 +87,7 @@ class Orchestrator(
                     results[step.id] = StepResult(StepResult.Status.BLOCKED, reason = "dependency failed")
                     remaining.remove(step)
                 }
+                persistState()
 
                 while (active.size < maxParallelism) {
                     val step = remaining.firstOrNull { candidate ->
@@ -116,6 +137,7 @@ class Orchestrator(
                             artifactStore.put(result.output)
                         }
                         results[completed.key] = result
+                        persistState()
                     } else {
                         delay(5)
                     }
@@ -127,9 +149,11 @@ class Orchestrator(
                         )
                     }
                     remaining.clear()
+                    persistState()
                 }
             }
         }
+        persistState()
         return results
     }
 }
