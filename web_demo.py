@@ -159,7 +159,27 @@ HTML_TEMPLATE = """
             {% endfor %}
         </div>
     </div>
-</body>
+        <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
 </html>
 """
 
@@ -252,7 +272,27 @@ def tasks_page():
             {% endfor %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, tasks=all_tasks)
 
@@ -299,7 +339,27 @@ def notifications_page():
             {% endfor %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, notifs=notifs)
 
@@ -386,7 +446,27 @@ def dashboard_page():
 
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, stats=stats, snap=snap, health=health, notif_stats=notif_stats)
 
@@ -432,7 +512,27 @@ def audit_page():
             </table>
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, records=records)
 
@@ -472,7 +572,27 @@ def status_page():
             {% endif %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, snap=snap)
 
@@ -616,7 +736,27 @@ def devices_page():
             {% endif %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, devices=devices, error=error)
 
@@ -718,7 +858,27 @@ def skills_page():
             {% endif %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, skills=skills)
 
@@ -782,7 +942,27 @@ def providers_page():
             {% endif %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, providers=providers, available=available)
 
@@ -886,7 +1066,27 @@ def create_task_page():
             {% endif %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, result=result)
 
@@ -957,7 +1157,27 @@ def memory_page():
             {% endif %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, memories=memories)
 
@@ -1045,7 +1265,27 @@ def task_detail(task_id):
             {% endif %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, task=task, evidence=evidence)
 
@@ -1110,7 +1350,27 @@ def events_page():
             {% endif %}
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, events=events)
 
@@ -1208,7 +1468,27 @@ def providers_config():
             
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, providers=providers_info, message=message)
 
@@ -1345,7 +1625,27 @@ def system_test_page():
             
             <a href="/" class="back">â† Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
         </div>
-    </body>
+            <script>
+            setInterval(function() {
+                fetch(window.location.href)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newTasks = doc.querySelectorAll('.task-item');
+                        const oldTasks = document.querySelectorAll('.task-item');
+                        if (newTasks.length === oldTasks.length) {
+                            newTasks.forEach((newTask, idx) => {
+                                if (newTask.innerHTML !== oldTasks[idx].innerHTML) {
+                                    oldTasks[idx].innerHTML = newTask.innerHTML;
+                                }
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        </script>
+        </body>
     </html>
     """, test_result=test_result)
 
