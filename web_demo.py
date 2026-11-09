@@ -1345,6 +1345,75 @@ def system_test_page():
     """, test_result=test_result)
 
 
+# ===== Ù†Ù‚Ø·Ø© Ù†Ù‡Ø§ÙŠØ© ØµØ­Ø© Ø§Ù„Ù†Ø¸Ø§Ù… =====
+
+@app.route("/api/health")
+def api_health():
+    """Ù†Ù‚Ø·Ø© Ù†Ù‡Ø§ÙŠØ© Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ù†Ø¸Ø§Ù… Ø¨ØµÙŠØºØ© JSON."""
+    health = {
+        "status": "healthy",
+        "components": {},
+        "timestamp": None,
+    }
+    try:
+        import time
+        health["timestamp"] = time.time()
+        
+        # ÙØ­Øµ Core
+        try:
+            _aethra.task_engine.list_tasks()
+            health["components"]["core"] = "healthy"
+        except Exception as e:
+            health["components"]["core"] = f"unhealthy: {str(e)}"
+            health["status"] = "degraded"
+        
+        # ÙØ­Øµ Ø§Ù„Ø£Ø¯ÙˆØ§Øª
+        try:
+            _aethra.tool_registry.list()
+            health["components"]["tools"] = "healthy"
+        except Exception as e:
+            health["components"]["tools"] = f"unhealthy: {str(e)}"
+            health["status"] = "degraded"
+        
+        # ÙØ­Øµ Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª
+        try:
+            _aethra.permission_broker.get_pending_approvals()
+            health["components"]["policy"] = "healthy"
+        except Exception as e:
+            health["components"]["policy"] = f"unhealthy: {str(e)}"
+            health["status"] = "degraded"
+        
+        # ÙØ­Øµ Ø§Ù„Ù…ÙˆÙØ±Ø§Øª
+        try:
+            _aethra.provider_registry.list_providers()
+            health["components"]["providers"] = "healthy"
+        except Exception as e:
+            health["components"]["providers"] = f"unhealthy: {str(e)}"
+            health["status"] = "degraded"
+        
+        # ÙØ­Øµ Ø§Ù„Ø°Ø§ÙƒØ±Ø©
+        try:
+            _aethra.memory_engine.get_stats()
+            health["components"]["memory"] = "healthy"
+        except Exception as e:
+            health["components"]["memory"] = f"unhealthy: {str(e)}"
+            health["status"] = "degraded"
+        
+        # ÙØ­Øµ Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª
+        try:
+            _aethra.notification_manager.get_stats()
+            health["components"]["notifications"] = "healthy"
+        except Exception as e:
+            health["components"]["notifications"] = f"unhealthy: {str(e)}"
+            health["status"] = "degraded"
+            
+    except Exception as e:
+        health["status"] = "unhealthy"
+        health["error"] = str(e)
+    
+    return jsonify(health)
+
+
 if __name__ == "__main__":
     print("ðŸš€ AETHRA Web Demo ÙŠØ¹Ù…Ù„ Ø¹Ù„Ù‰ http://0.0.0.0:5000")
     print("   Ø§ÙØªØ­ Ø§Ù„Ù…ØªØµÙØ­ Ø¹Ù„Ù‰: http://localhost:5000")
