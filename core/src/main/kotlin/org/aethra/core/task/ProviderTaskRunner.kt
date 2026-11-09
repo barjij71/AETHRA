@@ -147,19 +147,37 @@ class ProviderTaskRunner(
                     riskClass = task.riskClass
                 )
 
-                val fallbackResult = executeProvider(fallbackProvider, task, fallbackCandidate.modelId, true, "fallback")
+                val fallbackResult = executeProvider(
+                    fallbackProvider,
+                    task,
+                    fallbackCandidate.modelId,
+                    true,
+                    "fallback"
+                )
+
+                // Record the primary failure regardless of fallback outcome.
+                // AuditLog prepends entries, so this remains the newest entry
+                // after the fallback attempt has finished.
+                recordAudit(
+                    operation = "provider_execute",
+                    target = "${primaryProvider.id}/${fallbackModelId(primaryProvider)}",
+                    decision = "GRANTED",
+                    outcome = "FAILED_DURING_EXECUTION",
+                    taskId = task.id,
+                    taskGoal = task.goal,
+                    riskClass = task.riskClass
+                )
+
                 return fallbackResult.map { reply ->
-                    // Record primary failure audit last (so it lands at index 0 in the append-only audit log)
-                    recordAudit(
-                        operation = "provider_execute",
-                        target = "${primaryProvider.id}/${fallbackModelId(primaryProvider)}",
-                        decision = "GRANTED",
-                        outcome = "FAILED_DURING_EXECUTION",
-                        taskId = task.id,
-                        taskGoal = task.goal,
-                        riskClass = task.riskClass
+                    buildCombinedResult(
+                        fallbackCandidate,
+                        primaryProvider,
+                        task,
+                        reply,
+                        attempt,
+                        "fallback",
+                        usedFallback
                     )
-                    buildCombinedResult(fallbackCandidate, primaryProvider, task, reply, attempt, "fallback", usedFallback)
                 }
             }
         }
