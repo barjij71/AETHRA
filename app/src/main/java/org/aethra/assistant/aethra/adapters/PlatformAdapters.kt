@@ -146,7 +146,7 @@ class PlatformAdapters(private val context: Context) {
     private val selectedMachineStore: SelectedMachineStore = AndroidSelectedMachineStore(context)
 
     private val instaBoxProvider = InstaBoxRemoteComputerProvider(
-        machineId = { selectedMachineStore.getSelectedMachineId() ?: "" },
+        machineIdProvider = { selectedMachineStore.getSelectedMachineId() ?: "" },
         transport = UrlConnectionInstaBoxTransport(),
         apiKeyProvider = instaBoxApiKeyProvider
     )

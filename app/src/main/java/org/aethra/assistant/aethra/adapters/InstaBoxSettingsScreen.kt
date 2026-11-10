@@ -166,7 +166,7 @@ fun InstaBoxSettingsScreen(
                     } else {
                         scope.launch {
                             val testProvider = InstaBoxRemoteComputerProvider(
-                                machineId = { "" },
+                                machineIdProvider = { "" },
                                 transport = transport,
                                 apiKeyProvider = org.aethra.core.external.InstaBoxApiKeyProvider { key }
                             )
