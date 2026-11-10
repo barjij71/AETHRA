@@ -16,4 +16,10 @@ class EmptyInstaBoxApiKeyStore : InstaBoxApiKeyStore {
     override fun setApiKey(key: String) {
         apiKey = key
     }
+
+    override fun clearApiKey() {
+        apiKey = null
+    }
+
+    override fun hasApiKey(): Boolean = apiKey.isNotBlank()
 }
