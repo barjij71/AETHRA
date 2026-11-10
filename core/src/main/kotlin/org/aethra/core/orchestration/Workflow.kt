@@ -13,7 +13,9 @@ data class WorkflowStep(
     val approvalActor: String = "user",
     val approvalTarget: String = "",
     val approvalPayload: String = ""
-)
+) {
+    fun idempotencyKey(taskId: String): String = "$taskId::$id"
+}
 
 data class Workflow(val id: String, val steps: List<WorkflowStep>)
 
