@@ -57,7 +57,7 @@ jobs:
         run: ./gradlew --version
 
       - name: Assemble debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --console=plain
+        run: ./gradlew :app:assembleDebug --no-daemon --console=plain --stacktrace
 
       - name: Verify APK
         shell: bash
