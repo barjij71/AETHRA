@@ -101,6 +101,11 @@ class TaskEngine(
             // of silently rejecting an illegal QUEUED -> WAITING transition.
             transition(task, TaskState.PREPARING)
             transition(task, TaskState.WAITING_DEPENDENCY)
+            eventBus.publish(TaskEvent(
+                "dependency_blocked", System.currentTimeMillis(), task.id,
+                TaskState.PREPARING, TaskState.WAITING_DEPENDENCY,
+                mapOf("blockedBy" to task.dependsOn.joinToString(","))
+            ))
             persist()
         }
         return task
@@ -159,6 +164,11 @@ class TaskEngine(
                 if (task.state != TaskState.QUEUED || task.isExecuted) continue
                 if (task.dependsOn.isNotEmpty() && !TaskScheduler.isReady(task.dependsOn, { tasks[it] })) {
                     transition(task, TaskState.WAITING_DEPENDENCY)
+                    eventBus.publish(TaskEvent(
+                        "dependency_blocked", System.currentTimeMillis(), task.id,
+                        TaskState.PREPARING, TaskState.WAITING_DEPENDENCY,
+                        mapOf("blockedBy" to task.dependsOn.joinToString(","))
+                    ))
                     continue
                 }
                 if (task.riskClass.level >= RiskClass.SENSITIVE.level) {
@@ -265,6 +275,11 @@ class TaskEngine(
             }
             transition(task, TaskState.APPROVED)
             startTaskLocked(task, "dependency_ready")
+            eventBus.publish(TaskEvent(
+                "dependency_wake", System.currentTimeMillis(), task.id,
+                TaskState.WAITING_DEPENDENCY, TaskState.APPROVED,
+                mapOf("reason" to "dependency_ready")
+            ))
             persist()
         }
     }
@@ -523,6 +538,22 @@ class TaskEngine(
 
     val queuedCount: Int get() = tasks.values.count { it.state == TaskState.QUEUED }
     val activeCount: Int get() = synchronized(lock) { running.size }
+
+    /** Returns the current state of every dependency of the given task. */
+    fun getDependencyStatus(taskId: String): Map<String, TaskState> = synchronized(lock) {
+        val task = tasks[taskId] ?: return emptyMap()
+        task.dependsOn.associateWith { depId ->
+            tasks[depId]?.state ?: TaskState.ERROR
+        }
+    }
+
+    /** Returns dependency ids that are not yet COMPLETED, i.e. what blocks this task. */
+    fun getBlockedBy(taskId: String): List<String> = synchronized(lock) {
+        val task = tasks[taskId] ?: return emptyList()
+        task.dependsOn.filter { depId ->
+            tasks[depId]?.state != TaskState.COMPLETED
+        }
+    }
 
     private fun persist() {
         scope.launch {
