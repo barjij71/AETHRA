@@ -7,6 +7,39 @@ import org.junit.Test
 
 class InstaBoxRemoteComputerProviderTest {
     @Test
+    fun lifecycleUsesIdempotencyKeyAndCorrectEndpoint() = runBlocking {
+        val transport = RecordingTransport(InstaBoxHttpResponse(200, """{"status":"running"}"""))
+        val provider = InstaBoxRemoteComputerProvider(
+            machineId = "machine-123",
+            transport = transport,
+            apiKeyProvider = InstaBoxApiKeyProvider { "ibk_test" }
+        )
+
+        val result = provider.execute(
+            CapabilityRequest(operation = "machine.start")
+        ).getOrThrow()
+
+        assertTrue(result.success)
+        assertEquals("POST", transport.method)
+        assertEquals("/v1/machines/machine-123/start", transport.path)
+        assertEquals("ibk_test", transport.headers["X-API-Key"])
+        assertTrue(transport.headers["Idempotency-Key"]?.isNotBlank() == true)
+    }
+
+    @Test
+    fun healthWithoutApiKeyDoesNotCallNetwork() = runBlocking {
+        val transport = RecordingTransport(InstaBoxHttpResponse(200, "{}"))
+        val provider = InstaBoxRemoteComputerProvider(
+            machineId = "machine-123",
+            transport = transport,
+            apiKeyProvider = InstaBoxApiKeyProvider { null }
+        )
+
+        assertEquals(CapabilityHealth.UNAVAILABLE, provider.health())
+        assertTrue(transport.method == null)
+    }
+
+    @Test
     fun execUsesApiKeyAndMachineEndpoint() = runBlocking {
         val transport = RecordingTransport(InstaBoxHttpResponse(200, """{"exit":0,"stdout":"ok"}"""))
         val provider = InstaBoxRemoteComputerProvider(
