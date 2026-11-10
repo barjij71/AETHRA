@@ -38,6 +38,10 @@ import org.aethra.core.task.ProviderTaskRunner
 import org.aethra.core.tools.ToolRegistry
 import org.aethra.core.tools.Tool
 import org.aethra.core.skills.SkillRegistry
+import org.aethra.core.external.ExternalCapabilityRegistry
+import org.aethra.core.external.ExternalCapabilityRouter
+import org.aethra.core.external.InstaBoxRemoteComputerProvider
+import org.aethra.core.external.UrlConnectionInstaBoxTransport
 
 class AndroidStorage(private val context: Context) : Storage {
     private val prefs: SharedPreferences =
@@ -129,6 +133,27 @@ class PlatformAdapters(private val context: Context) {
     val skillRegistryAndroid = SkillRegistryAndroid(skillRegistry)
     val policyEngine = PolicyEngine()
 
+    // External capability integration
+    val externalRegistry = ExternalCapabilityRegistry()
+    val externalRouter = ExternalCapabilityRouter(externalRegistry, permissionBroker, auditLog, eventBus)
+
+    private val instaBoxApiKeyStore: InstaBoxApiKeyStore = EmptyInstaBoxApiKeyStore()
+    private val instaBoxApiKeyProvider = AndroidInstaBoxApiKeyProvider(instaBoxApiKeyStore)
+
+    private val instaBoxProvider = InstaBoxRemoteComputerProvider(
+        machineId = "machine-123",
+        transport = UrlConnectionInstaBoxTransport(),
+        apiKeyProvider = instaBoxApiKeyProvider
+    )
+
+    init {
+        registerExternalCapabilities()
+    }
+
+    fun registerExternalCapabilities() {
+        externalRegistry.register(instaBoxProvider)
+    }
+
     fun registerAndroidTools() {
         toolRegistry.register(DeviceInfoTool(context).tool)
         toolRegistry.register(AppLaunchTool(context).tool)
@@ -194,6 +219,11 @@ class PlatformAdapters(private val context: Context) {
             val goal = task.goal.trim()
             val tool = adapters.toolRegistry.resolve(goal)
             if (tool != null) return dispatchTool(tool, task, goal)
+            // Route external capability goals (e.g. machine.start, remote.exec)
+            // through the external capability router before falling back to
+            // the provider runner.
+            val externalResult = adapters.externalRouter.run(task)
+            if (externalResult.isSuccess) return externalResult
             return providerRunner.run(task)
         }
 
