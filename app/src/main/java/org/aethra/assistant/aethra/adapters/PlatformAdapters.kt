@@ -137,11 +137,18 @@ class PlatformAdapters(private val context: Context) {
     val externalRegistry = ExternalCapabilityRegistry()
     val externalRouter = ExternalCapabilityRouter(externalRegistry, permissionBroker, auditLog, eventBus)
 
-    private val instaBoxApiKeyStore: InstaBoxApiKeyStore = EmptyInstaBoxApiKeyStore()
+    // API key storage backed by XOR-obfuscated SharedPreferences (no external dependencies).
+    // The raw API key is never stored in source code, Git history, logs, or plaintext
+    // SharedPreferences. The production path should migrate to Android Keystore-backed
+    // EncryptedSharedPreferences.
+    val instaBoxApiKeyStore: InstaBoxApiKeyStore = EncryptedInstaBoxApiKeyStore(context)
     private val instaBoxApiKeyProvider = AndroidInstaBoxApiKeyProvider(instaBoxApiKeyStore)
 
-    private val instaBoxProvider = InstaBoxRemoteComputerProvider(
-        machineId = "machine-123",
+    // Selected machine ID is stored in ordinary SharedPreferences (not a secret).
+    val selectedMachineStore: SelectedMachineStore = AndroidSelectedMachineStore(context)
+
+    val instaBoxProvider: InstaBoxRemoteComputerProvider = InstaBoxRemoteComputerProvider(
+        machineIdProvider = { selectedMachineStore.getSelectedMachineId() ?: "" },
         transport = UrlConnectionInstaBoxTransport(),
         apiKeyProvider = instaBoxApiKeyProvider
     )
@@ -219,6 +226,11 @@ class PlatformAdapters(private val context: Context) {
             val goal = task.goal.trim()
             val tool = adapters.toolRegistry.resolve(goal)
             if (tool != null) return dispatchTool(tool, task, goal)
+            // Route external capability goals (e.g. machine.start, remote.exec)
+            // through the external capability router before falling back to
+            // the provider runner.
+            val externalResult = adapters.externalRouter.run(task)
+            if (externalResult.isSuccess) return externalResult
             return providerRunner.run(task)
         }
 

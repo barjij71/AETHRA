@@ -14,6 +14,7 @@ import org.aethra.core.domain.DomainEvent
 import org.aethra.core.domain.MemoryEntry
 import org.aethra.core.skills.Skill
 import org.aethra.core.task.Task
+import org.aethra.assistant.aethra.adapters.InstaBoxSettingsScreen
 import org.aethra.assistant.aethra.runtime.Runtime
 
 @Composable
@@ -23,6 +24,7 @@ fun AthraHomePage(runtime: Runtime) {
     var events by remember { mutableStateOf<List<DomainEvent>>(emptyList()) }
     var skills by remember { mutableStateOf<List<Skill>>(emptyList()) }
     var memories by remember { mutableStateOf<List<MemoryEntry>>(emptyList()) }
+    var showSettings by remember { mutableStateOf(false) }
 
     val taskEngine = remember(runtime) { runtime.taskEngine }
     val skillRegistryAndroid = remember(runtime) { runtime.skillRegistryAndroid }
@@ -56,6 +58,9 @@ fun AthraHomePage(runtime: Runtime) {
                     "  •  Active: " + (runtime.taskEngine?.activeCount ?: 0) +
                     "  •  Queued: " + (runtime.taskEngine?.queuedCount ?: 0)
             )
+            Button(onClick = { showSettings = true }) {
+                Text("Settings")
+            }
         }
 
         Row(
@@ -126,6 +131,15 @@ fun AthraHomePage(runtime: Runtime) {
             LazyColumn {
                 items(memories) { m -> Text(m.category.toString() + "  " + m.text) }
             }
+        }
+    }
+
+    runtime.platformAdapters?.let { adapters ->
+        if (showSettings) {
+            InstaBoxSettingsScreen(
+                adapters = adapters,
+                onClose = { showSettings = false }
+            )
         }
     }
 }
