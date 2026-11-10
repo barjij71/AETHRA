@@ -453,7 +453,8 @@ class TaskEngine(
                 return
             }
 
-            val runningNow = task.state == TaskState.RUNNING
+            val previousState = task.state
+            val runningNow = previousState == TaskState.RUNNING
             task.cancel()
             pending.remove(taskId)
             if (runningNow) {
@@ -464,7 +465,7 @@ class TaskEngine(
                 running.remove(taskId)
             }
             persist()
-            eventBus.publish(TaskEvent("cancel", System.currentTimeMillis(), task.id, task.state, task.state))
+            eventBus.publish(TaskEvent("cancel", System.currentTimeMillis(), task.id, previousState, task.state))
             runningNow
         }
 
