@@ -37,6 +37,17 @@ class ExternalCapabilityContractTest {
     }
 
     @Test
+    fun routerRejectsBlockedRemoteOperations() = runBlocking {
+        val registry = ExternalCapabilityRegistry()
+        registry.register(FakeCapability("instabox", ExternalCapabilityType.REMOTE_COMPUTER, "InstaBox", setOf("shell.exec")))
+        val result = ExternalCapabilityRouter(registry).execute(
+            "instabox",
+            CapabilityRequest("shell.exec", mapOf("command" to "port_scan localhost"))
+        )
+        assertTrue(result.isFailure)
+    }
+
+    @Test
     fun routerDispatchesStructuredRequest() = runBlocking {
         val registry = ExternalCapabilityRegistry()
         registry.register(FakeCapability("instabox", ExternalCapabilityType.REMOTE_COMPUTER, "InstaBox", setOf("shell.exec")))
