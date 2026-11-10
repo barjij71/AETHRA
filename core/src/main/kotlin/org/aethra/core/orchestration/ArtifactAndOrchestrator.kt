@@ -52,21 +52,22 @@ class Orchestrator(
         val persisted = workflowStore.load(workflow.id, taskId)
         val results = LinkedHashMap<String, StepResult>()
         persisted?.steps?.forEach { (id, record) ->
-            if (workflow.steps.any { it.id == id }) {
-                val step = workflow.steps.first { it.id == id }
-                when (record.status) {
-                    StepResult.Status.SUCCEEDED -> results[id] = StepResult(StepResult.Status.SUCCEEDED)
-                    StepResult.Status.RUNNING -> {
-                        val idempotent = registry.get(step.skillId)?.manifest?.idempotent == true
-                        results[id] = if (idempotent) {
-                            StepResult(StepResult.Status.FAILED, reason = "recovered idempotent step for retry")
-                        } else {
-                            StepResult(StepResult.Status.UNKNOWN_OUTCOME, reason = "recovered non-idempotent step; reconciliation required")
-                        }
+            val step = workflow.steps.firstOrNull { it.id == id } ?: return@forEach
+            when (record.status) {
+                StepResult.Status.SUCCEEDED ->
+                    results[id] = StepResult(StepResult.Status.SUCCEEDED)
+                StepResult.Status.RUNNING -> {
+                    val idempotent = registry.get(step.skillId)?.manifest?.idempotent == true
+                    if (!idempotent) {
+                        results[id] = StepResult(
+                            StepResult.Status.UNKNOWN_OUTCOME,
+                            reason = "recovered non-idempotent step; reconciliation required"
+                        )
                     }
-                    StepResult.Status.FAILED, StepResult.Status.BLOCKED, StepResult.Status.CANCELLED, StepResult.Status.UNKNOWN_OUTCOME ->
-                        results[id] = StepResult(record.status, reason = record.reason)
                 }
+                StepResult.Status.FAILED, StepResult.Status.BLOCKED,
+                StepResult.Status.CANCELLED, StepResult.Status.UNKNOWN_OUTCOME ->
+                    results[id] = StepResult(record.status, reason = record.reason)
             }
         }
 
