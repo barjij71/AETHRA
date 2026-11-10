@@ -22,6 +22,23 @@ data class CapabilityRequest(
     val requiresApproval: Boolean = false
 )
 
+object ExternalCapabilityPolicy {
+    private val deniedOperations = setOf(
+        "mining", "crypto_mining", "proof_of_work",
+        "port_scan", "vulnerability_scan", "dos", "ddos",
+        "phishing", "credential_stuffing", "stolen_credentials",
+        "bulk_spam", "bulk_account_creation"
+    )
+
+    fun allows(request: CapabilityRequest): Boolean {
+        val operation = request.operation.trim().lowercase()
+        return operation !in deniedOperations &&
+            request.arguments.values.none { value ->
+                deniedOperations.any { blocked -> value.lowercase().contains(blocked) }
+            }
+    }
+}
+
 data class CapabilityResult(
     val capabilityId: String,
     val operation: String,
