@@ -227,7 +227,7 @@ fun InstaBoxSettingsScreen(
                             )
                         }
                         isDiscovering = false
-                        val cr = result as? org.aethra.core.external.CapabilityResult
+                        val cr = result.getOrDefault(null)
                         if (cr != null && cr.success) {
                             val body = cr.output["body"] ?: ""
                             val parsed = parseMachineList(body)
