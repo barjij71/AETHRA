@@ -3,6 +3,7 @@ package org.aethra.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import org.aethra.core.orchestration.*
 
 class WorkflowStoreTest {
@@ -13,21 +14,81 @@ class WorkflowStoreTest {
             workflowId = "wf-1",
             taskId = "task-1",
             steps = mapOf(
-                "a" to StepExecutionRecord("a", StepResult.Status.SUCCEEDED, artifactId = "artifact-a"),
-                "b" to StepExecutionRecord("b", StepResult.Status.BLOCKED, reason = "dependency failed")
+                "a" to StepExecutionRecord("a", StepResult.Status.SUCCEEDED, artifactId = "artifact-a", idempotencyKey = "task-1::a"),
+                "b" to StepExecutionRecord("b", StepResult.Status.BLOCKED, reason = "dependency failed", idempotencyKey = "task-1::b")
             )
         )
-
         store.save(record)
-
-        val loaded = store.load("wf-1", "task-1")
-        assertNotNull(loaded)
-        assertEquals(record, loaded)
+        assertEquals(record, store.load("wf-1", "task-1"))
     }
 
     @Test
     fun missingWorkflowReturnsNull() {
-        val store = InMemoryWorkflowStore()
-        assertEquals(null, store.load("missing", "task"))
+        assertEquals(null, InMemoryWorkflowStore().load("missing", "task"))
+    }
+
+    @Test
+    fun persistsAcrossStoreRecreationAndPreservesRevision() {
+        val file = kotlin.io.path.createTempFile("aethra-workflow-", ".json")
+        try {
+            val first = JsonFileWorkflowStore(file)
+            first.save(
+                WorkflowExecutionRecord(
+                    workflowId = "wf-restart",
+                    taskId = "task-restart",
+                    revision = 3,
+                    steps = mapOf(
+                        "a" to StepExecutionRecord("a", StepResult.Status.RUNNING, idempotencyKey = "task-restart::a")
+                    )
+                )
+            )
+            val second = JsonFileWorkflowStore(file)
+            val loaded = second.load("wf-restart", "task-restart")
+            assertNotNull(loaded)
+            assertEquals(3, loaded.revision)
+            assertEquals(StepResult.Status.RUNNING, loaded.steps["a"]?.status)
+            assertEquals("task-restart::a", loaded.steps["a"]?.idempotencyKey)
+        } finally {
+            kotlin.io.path.deleteIfExists(file)
+        }
+    }
+
+    @Test
+    fun nonIdempotentRunningStepRecoversAsUnknownOutcome() = kotlinx.coroutines.test.runTest {
+        val registry = org.aethra.core.skills.SkillRegistry()
+        registry.register(org.aethra.core.skills.SkillManifest(
+            id = "once", version = "1.0.0", name = "once", source = "test", license = "MIT",
+            inputSchemaVersion = "1", outputSchemaVersion = "1", trusted = true, enabled = true, idempotent = false
+        ))
+        registry.setTrust("once", org.aethra.core.skills.TrustState.TRUSTED)
+        registry.enable("once")
+        val file = kotlin.io.path.createTempFile("aethra-recovery-", ".json")
+        try {
+            JsonFileWorkflowStore(file).save(
+                WorkflowExecutionRecord(
+                    workflowId = "wf-recovery",
+                    taskId = "task-recovery",
+                    steps = mapOf(
+                        "once-step" to StepExecutionRecord(
+                            "once-step", StepResult.Status.RUNNING,
+                            idempotencyKey = "task-recovery::once-step"
+                        )
+                    )
+                )
+            )
+            var executed = false
+            val result = Orchestrator(
+                registry, ArtifactStore(), org.aethra.core.policy.CorePolicyEngine(),
+                SkillExecutor { _, _ -> executed = true; StepResult(StepResult.Status.SUCCEEDED) },
+                workflowStore = JsonFileWorkflowStore(file)
+            ).run(
+                Workflow("wf-recovery", listOf(WorkflowStep("once-step", "once"))),
+                "task-recovery"
+            )
+            assertEquals(StepResult.Status.UNKNOWN_OUTCOME, result["once-step"]?.status)
+            assertEquals(false, executed)
+        } finally {
+            kotlin.io.path.deleteIfExists(file)
+        }
     }
 }
