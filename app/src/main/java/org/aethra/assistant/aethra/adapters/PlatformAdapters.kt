@@ -137,11 +137,16 @@ class PlatformAdapters(private val context: Context) {
     val externalRegistry = ExternalCapabilityRegistry()
     val externalRouter = ExternalCapabilityRouter(externalRegistry, permissionBroker, auditLog, eventBus)
 
-    private val instaBoxApiKeyStore: InstaBoxApiKeyStore = EmptyInstaBoxApiKeyStore()
+    // Insecure API key storage is NOT used. The encrypted store keeps the key
+    // in Android Keystore-backed EncryptedSharedPreferences.
+    private val instaBoxApiKeyStore: InstaBoxApiKeyStore = EncryptedInstaBoxApiKeyStore(context)
     private val instaBoxApiKeyProvider = AndroidInstaBoxApiKeyProvider(instaBoxApiKeyStore)
 
+    // Selected machine ID is stored in ordinary SharedPreferences (not a secret).
+    private val selectedMachineStore: SelectedMachineStore = AndroidSelectedMachineStore(context)
+
     private val instaBoxProvider = InstaBoxRemoteComputerProvider(
-        machineId = "machine-123",
+        machineId = { selectedMachineStore.getSelectedMachineId() ?: "" },
         transport = UrlConnectionInstaBoxTransport(),
         apiKeyProvider = instaBoxApiKeyProvider
     )

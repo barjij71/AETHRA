@@ -65,7 +65,7 @@ class ExternalCapabilityTaskRunnerTest {
         apiKey: String? = "ibk_test"
     ): InstaBoxRemoteComputerProvider =
         InstaBoxRemoteComputerProvider(
-            machineId = "machine-123",
+            machineIdProvider = { "machine-123" },
             transport = transport,
             apiKeyProvider = InstaBoxApiKeyProvider { apiKey }
         )
@@ -298,8 +298,7 @@ class ExternalCapabilityTaskRunnerTest {
             CapabilityRequest(operation = "machine.get")
         ).getOrThrow()
 
-        val entries = auditLog.all()
-        val executeEntry = entries.first { it.operation == "external.execute" }
+        val executeEntry = auditLog.all().first { it.operation == "external.execute" }
         assertEquals("instabox.remote", executeEntry.target)
         assertEquals("GRANTED", executeEntry.decision)
         assertEquals("SUCCESS", executeEntry.outcome)
@@ -318,8 +317,7 @@ class ExternalCapabilityTaskRunnerTest {
             CapabilityRequest(operation = "machine.get")
         )
 
-        val entries = auditLog.all()
-        val executeEntry = entries.first { it.operation == "external.execute" }
+        val executeEntry = auditLog.all().first { it.operation == "external.execute" }
         assertEquals("DENIED", executeEntry.decision)
         assertEquals("FAILED", executeEntry.outcome)
     }
@@ -338,8 +336,7 @@ class ExternalCapabilityTaskRunnerTest {
             )
         )
 
-        val entries = auditLog.all()
-        val rejectEntry = entries.first { it.operation == "external.policy.reject" }
+        val rejectEntry = auditLog.all().first { it.operation == "external.policy.reject" }
         assertEquals("DENIED", rejectEntry.decision)
         assertEquals("POLICY_REJECTED", rejectEntry.outcome)
     }

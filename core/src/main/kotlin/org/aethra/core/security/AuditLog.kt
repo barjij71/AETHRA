@@ -39,12 +39,26 @@ class PermissionBroker(private val auditLog: AuditLog) {
     private val grants = HashMap<String, org.aethra.core.domain.ApprovalGrant>()
     private val lock = Any()
 
-    /** Ask the user for approval. Returns a token (or null) that the caller must present on the next execution. Never auto-approves. */
+    /** Ask the user for approval. Returns a token (or null) that the caller must present on the next execution. Never auto-approves. If a valid, granted approval already exists for this actor/risk/operation/target, returns null (already approved). */
     suspend fun requestApproval(actor: String, risk: RiskClass, operation: String, target: String): String? {
         if (risk.level < RiskClass.SENSITIVE.level) return null
+        synchronized(lock) {
+            // If there's already a valid, granted approval for this operation, don't request again.
+            val existingGrant = grants.values.find { g ->
+                g.actor == actor &&
+                g.riskClass == risk &&
+                g.operation == operation &&
+                g.target == target &&
+                g.granted && {
+                    val expiresAt = g.expiresAt
+                    expiresAt == null || System.currentTimeMillis() <= expiresAt
+                }()
+            }
+            if (existingGrant != null) return null
+        }
         val token = UUID.randomUUID().toString()
         synchronized(lock) {
-            grants[token] = org.aethra.core.domain.ApprovalGrant(token, target, actor, risk, grantedAt = System.currentTimeMillis(), expiresAt = System.currentTimeMillis() + 300_000L)
+            grants[token] = org.aethra.core.domain.ApprovalGrant(token, target, actor, risk, operation, grantedAt = System.currentTimeMillis(), expiresAt = System.currentTimeMillis() + 300_000L)
         }
         val entry = AuditEntry(
             id = UUID.randomUUID().toString(), actor = actor, operation = operation,
@@ -63,7 +77,15 @@ class PermissionBroker(private val auditLog: AuditLog) {
             target = grant.target, riskClass = grant.riskClass, decision = outcome, outcome = reason
         )
         auditLog.record(entry)
-        synchronized(lock) { grants.remove(token) }
+        synchronized(lock) {
+            if (granted) {
+                // Keep the grant marked as granted so subsequent requestApproval()
+                // calls for the same operation return null (already approved).
+                grant.granted = true
+            } else {
+                grants.remove(token)
+            }
+        }
     }
 
     /** Whether a grant token is still valid (not expired). */

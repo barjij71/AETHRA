@@ -15,4 +15,10 @@ interface InstaBoxApiKeyStore {
 
     /** Stores the API key. Implementations must encrypt at rest. */
     fun setApiKey(key: String)
+
+    /** Removes any stored API key. */
+    fun clearApiKey()
+
+    /** Returns true if a non-empty API key is currently stored. */
+    fun hasApiKey(): Boolean
 }

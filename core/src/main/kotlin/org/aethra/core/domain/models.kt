@@ -133,6 +133,8 @@ data class ApprovalGrant(
     val target: String,
     val actor: String,
     val riskClass: RiskClass,
+    val operation: String,
     val grantedAt: Long = System.currentTimeMillis(),
-    var expiresAt: Long? = null
+    var expiresAt: Long? = null,
+    var granted: Boolean = false
 )

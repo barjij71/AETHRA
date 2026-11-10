@@ -2,15 +2,19 @@ package org.aethra.core.external
 
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.Json
 
 /**
  * Real InstaBox HTTP API adapter.
  *
- * Credentials are injected through InstaBoxApiKeyProvider and are never persisted
+ * Credentials are injected through [InstaBoxApiKeyProvider] and are never persisted
  * by this provider. The transport is injectable for deterministic Core tests.
+ *
+ * The machine ID is obtained from [machineIdProvider], allowing the platform to
+ * change the selected machine without rebuilding this provider.
  */
 class InstaBoxRemoteComputerProvider(
-    private val machineId: String,
+    private val machineIdProvider: () -> String,
     private val transport: InstaBoxTransport,
     private val apiKeyProvider: InstaBoxApiKeyProvider
 ) : ExternalCapability {
@@ -18,6 +22,7 @@ class InstaBoxRemoteComputerProvider(
     override val type: ExternalCapabilityType = ExternalCapabilityType.REMOTE_COMPUTER
     override val displayName: String = "InstaBox Remote Computer"
     override val capabilities: Set<String> = setOf(
+        "machine.list",
         "machine.get",
         "machine.start",
         "machine.stop",
@@ -26,8 +31,12 @@ class InstaBoxRemoteComputerProvider(
         "remote.exec"
     )
 
+    private val machineId: String
+        get() = machineIdProvider()
+
     override suspend fun health(): CapabilityHealth {
         if (apiKeyProvider.apiKey()?.isNotBlank() != true) return CapabilityHealth.UNAVAILABLE
+        if (machineId.isBlank()) return CapabilityHealth.UNAVAILABLE
         return runCatching {
             val response = transport.request("GET", "/v1/machines/$machineId", headers = headers())
             if (response.statusCode in 200..299) CapabilityHealth.READY
@@ -39,8 +48,13 @@ class InstaBoxRemoteComputerProvider(
         apiKeyProvider.apiKey()?.takeIf { it.isNotBlank() }
             ?: return Result.failure(IllegalStateException("InstaBox API key is not configured"))
 
+        if (machineId.isBlank()) {
+            return Result.failure(IllegalStateException("InstaBox machine is not selected"))
+        }
+
         return runCatching {
             when (request.operation) {
+                "machine.list" -> listMachines()
                 "machine.get" -> machineGet()
                 "machine.start" -> lifecycle("start")
                 "machine.stop" -> lifecycle("stop")
@@ -50,6 +64,15 @@ class InstaBoxRemoteComputerProvider(
                 else -> throw IllegalArgumentException("unsupported InstaBox operation: ${request.operation}")
             }
         }
+    }
+
+    private suspend fun listMachines(): CapabilityResult {
+        val response = transport.request(
+            "GET",
+            "/v1/machines",
+            headers = headers()
+        )
+        return response.toResult("machine.list")
     }
 
     private suspend fun machineGet(): CapabilityResult {

@@ -10,7 +10,7 @@ class InstaBoxRemoteComputerProviderTest {
     fun lifecycleUsesIdempotencyKeyAndCorrectEndpoint() = runBlocking {
         val transport = RecordingTransport(InstaBoxHttpResponse(200, """{"status":"running"}"""))
         val provider = InstaBoxRemoteComputerProvider(
-            machineId = "machine-123",
+            machineIdProvider = { "machine-123" },
             transport = transport,
             apiKeyProvider = InstaBoxApiKeyProvider { "ibk_test" }
         )
@@ -30,7 +30,7 @@ class InstaBoxRemoteComputerProviderTest {
     fun healthWithoutApiKeyDoesNotCallNetwork() = runBlocking {
         val transport = RecordingTransport(InstaBoxHttpResponse(200, "{}"))
         val provider = InstaBoxRemoteComputerProvider(
-            machineId = "machine-123",
+            machineIdProvider = { "machine-123" },
             transport = transport,
             apiKeyProvider = InstaBoxApiKeyProvider { null }
         )
@@ -43,7 +43,7 @@ class InstaBoxRemoteComputerProviderTest {
     fun execUsesApiKeyAndMachineEndpoint() = runBlocking {
         val transport = RecordingTransport(InstaBoxHttpResponse(200, """{"exit":0,"stdout":"ok"}"""))
         val provider = InstaBoxRemoteComputerProvider(
-            machineId = "machine-123",
+            machineIdProvider = { "machine-123" },
             transport = transport,
             apiKeyProvider = InstaBoxApiKeyProvider { "ibk_test" }
         )
@@ -66,7 +66,7 @@ class InstaBoxRemoteComputerProviderTest {
     fun missingApiKeyFailsBeforeNetworkCall() = runBlocking {
         val transport = RecordingTransport(InstaBoxHttpResponse(200, "{}"))
         val provider = InstaBoxRemoteComputerProvider(
-            machineId = "machine-123",
+            machineIdProvider = { "machine-123" },
             transport = transport,
             apiKeyProvider = InstaBoxApiKeyProvider { null }
         )
@@ -87,7 +87,7 @@ class InstaBoxRemoteComputerProviderTest {
         val registry = ExternalCapabilityRegistry()
         registry.register(
             InstaBoxRemoteComputerProvider(
-                machineId = "machine-123",
+                machineIdProvider = { "machine-123" },
                 transport = RecordingTransport(InstaBoxHttpResponse(200, "{}")),
                 apiKeyProvider = InstaBoxApiKeyProvider { "ibk_test" }
             )
