@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.external.CapabilityRequest
-import org.aethra.core.external.InstaBoxHttpResponse
+import org.aethra.core.external.CapabilityHealth
 import org.aethra.core.external.InstaBoxRemoteComputerProvider
 import org.aethra.core.external.InstaBoxTransport
 import org.aethra.core.external.UrlConnectionInstaBoxTransport
