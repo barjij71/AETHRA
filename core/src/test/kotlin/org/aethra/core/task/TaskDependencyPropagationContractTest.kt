@@ -170,9 +170,10 @@ class TaskDependencyPropagationContractTest {
 
     @Test
     fun cancellationEventPreservesPreviousState() = runBlocking {
-        val engine = makeEngine()
+        val storage = C2TestStorage()
+        val bus = EventBus()
+        val engine = TaskEngine(storage, bus, C2TestRunner(), maxConcurrent = 4)
         val task = engine.create("cancel-event")
-        val bus = extractEventBus(engine)
 
         engine.cancel(task.id)
 
@@ -268,11 +269,6 @@ private fun makeEngine(): TaskEngine {
     return TaskEngine(store, bus, C2TestRunner(), maxConcurrent = 4)
 }
 
-private fun extractEventBus(engine: TaskEngine): EventBus {
-    val field = TaskEngine::class.java.getDeclaredField("eventBus")
-    field.isAccessible = true
-    return field.get(engine) as EventBus
-}
 
 private fun makeEngineWithRunner(runner: TaskRunner): TaskEngine {
     val store = C2TestStorage()
