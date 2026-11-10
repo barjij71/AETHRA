@@ -224,11 +224,6 @@ class PlatformAdapters(private val context: Context) {
             val goal = task.goal.trim()
             val tool = adapters.toolRegistry.resolve(goal)
             if (tool != null) return dispatchTool(tool, task, goal)
-            // Route external capability goals (e.g. machine.start, remote.exec)
-            // through the external capability router before falling back to
-            // the provider runner.
-            val externalResult = adapters.externalRouter.run(task)
-            if (externalResult.isSuccess) return externalResult
             return providerRunner.run(task)
         }
 
