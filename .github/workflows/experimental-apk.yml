@@ -92,7 +92,7 @@ jobs:
           ram-size: 2048M
           heap-size: 256M
           disable-animations: true
-          boot-timeout: 120
+          emulator-boot-timeout: 120
           script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --console=plain --stacktrace
 
   apk-assembly:
