@@ -80,6 +80,9 @@ class TaskEngine(
     ): Task {
         val task = Task(goal, role, riskClass, dependsOn)
         synchronized(lock) {
+            require(dependsOn.all { tasks.containsKey(it) }) {
+                "Task dependency not found"
+            }
             require(!TaskScheduler.wouldCreateCycle(task.id, dependsOn) { tasks[it] }) {
                 "Task dependency cycle detected"
             }
