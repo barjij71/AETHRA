@@ -1,6 +1,5 @@
 package org.aethra.core.external
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -13,18 +12,22 @@ import kotlinx.serialization.json.put
 class InstaBoxRemoteComputerProvider(
     private val machineId: String,
     private val transport: InstaBoxTransport,
-    private val apiKeyProvider: InstaBoxApiKeyProvider,
-    private val json: Json = Json { ignoreUnknownKeys = true }
+    private val apiKeyProvider: InstaBoxApiKeyProvider
 ) : ExternalCapability {
     override val id: String = "instabox.remote"
     override val type: ExternalCapabilityType = ExternalCapabilityType.REMOTE_COMPUTER
     override val displayName: String = "InstaBox Remote Computer"
     override val capabilities: Set<String> = setOf(
         "machine.get",
+        "machine.start",
+        "machine.stop",
+        "machine.suspend",
+        "machine.resume",
         "remote.exec"
     )
 
     override suspend fun health(): CapabilityHealth {
+        if (apiKeyProvider.apiKey()?.isNotBlank() != true) return CapabilityHealth.UNAVAILABLE
         return runCatching {
             val response = transport.request("GET", "/v1/machines/$machineId", headers())
             if (response.statusCode in 200..299) CapabilityHealth.READY
@@ -39,6 +42,10 @@ class InstaBoxRemoteComputerProvider(
         return runCatching {
             when (request.operation) {
                 "machine.get" -> machineGet()
+                "machine.start" -> lifecycle("start")
+                "machine.stop" -> lifecycle("stop")
+                "machine.suspend" -> lifecycle("suspend")
+                "machine.resume" -> lifecycle("resume")
                 "remote.exec" -> exec(request)
                 else -> throw IllegalArgumentException("unsupported InstaBox operation: ${request.operation}")
             }
@@ -52,6 +59,15 @@ class InstaBoxRemoteComputerProvider(
             headers = headers()
         )
         return response.toResult("machine.get")
+    }
+
+    private suspend fun lifecycle(action: String): CapabilityResult {
+        val response = transport.request(
+            "POST",
+            "/v1/machines/$machineId/$action",
+            headers = headers() + ("Idempotency-Key" to java.util.UUID.randomUUID().toString())
+        )
+        return response.toResult("machine.$action")
     }
 
     private suspend fun exec(request: CapabilityRequest): CapabilityResult {
