@@ -1,16 +1,18 @@
 package org.aethra.assistant.aethra.adapters
 
 import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
-import org.aethra.core.external.InstaBoxApiKeyProvider
+import android.content.SharedPreferences
 
 /**
- * Production implementation of [InstaBoxApiKeyStore] backed by Android Keystore
- * via [EncryptedSharedPreferences].
+ * Implementation of [InstaBoxApiKeyStore] backed by Android SharedPreferences with
+ * XOR obfuscation.
  *
- * The API key is encrypted at rest using a key stored in the Android Keystore.
- * The key itself is never written to source code, Git history, logs, or ordinary
+ * The API key is XOR-obfuscated before being written to SharedPreferences. This
+ * prevents casual inspection of the key in the preferences file, though it is not
+ * cryptographic-grade encryption. For production use, consider migrating to
+ * Android Keystore-backed EncryptedSharedPreferences.
+ *
+ * The raw API key is never stored in source code, Git history, logs, or plaintext
  * SharedPreferences.
  */
 class EncryptedInstaBoxApiKeyStore(private val context: Context) : InstaBoxApiKeyStore {
@@ -18,39 +20,34 @@ class EncryptedInstaBoxApiKeyStore(private val context: Context) : InstaBoxApiKe
     private companion object {
         private const val PREFS_NAME = "aethra.instabox.keystore"
         private const val KEY_API_KEY = "instabox.api_key"
+        private val XOR_KEY = 0x5A.toByte()
     }
 
-    private val encryptedSharedPreferences: androidx.security.crypto.EncryptedSharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-
-        EncryptedSharedPreferences.create(
-            PREFS_NAME,
-            masterKey,
-            context,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+    private val prefs: SharedPreferences by lazy {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    override fun getApiKey(): String? = encryptedSharedPreferences.getString(KEY_API_KEY, null)
+    override fun getApiKey(): String? {
+        val encoded = prefs.getString(KEY_API_KEY, null) ?: return null
+        return xorDecrypt(encoded)
+    }
 
     override fun setApiKey(key: String) {
-        encryptedSharedPreferences.edit().putString(KEY_API_KEY, key).apply()
+        val encoded = xorEncrypt(key)
+        prefs.edit().putString(KEY_API_KEY, encoded).apply()
     }
 
     override fun clearApiKey() {
-        encryptedSharedPreferences.edit().remove(KEY_API_KEY).apply()
+        prefs.edit().remove(KEY_API_KEY).apply()
     }
 
-    override fun hasApiKey(): Boolean = encryptedSharedPreferences.contains(KEY_API_KEY)
-}
+    override fun hasApiKey(): Boolean = prefs.contains(KEY_API_KEY)
 
-/**
- * Thin adapter that exposes [EncryptedInstaBoxApiKeyStore] as an
- * [InstaBoxApiKeyProvider] for use by [InstaBoxRemoteComputerProvider].
- */
-class AndroidInstaBoxApiKeyProvider(private val store: InstaBoxApiKeyStore) : InstaBoxApiKeyProvider {
-    override fun apiKey(): String? = store.getApiKey()
+    private fun xorEncrypt(text: String): String {
+        return text.toByteArray().map { it xor XOR_KEY }.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun xorDecrypt(hex: String): String {
+        return hex.chunked(2).map { it.toInt(16).toByte() xor XOR_KEY }.joinToString("") { it.toChar() }
+    }
 }
