@@ -40,6 +40,20 @@ class TaskDependencySchedulerContractTest {
     }
 
     @Test
+    fun missingDependencyIsRejectedAtCreation() {
+        val engine = makeEngine()
+        var rejected = false
+        try {
+            engine.create("dependent", dependsOn = listOf("missing-dependency-id"))
+        } catch (e: IllegalArgumentException) {
+            rejected = true
+        }
+
+        assertTrue(rejected)
+        assertTrue(engine.allTasks().isEmpty())
+    }
+
+    @Test
     fun dependentStartsInWaitingDependencyStateAtCreation() {
         val engine = makeEngine()
         val dependency = engine.create("dependency")
@@ -290,6 +304,30 @@ class TaskDependencySchedulerContractTest {
         assertFalse(dependent.state == TaskState.RUNNING)
         assertFalse(dependent.isTerminal())
     }
+    @Test
+    fun multiLevelDependenciesExecuteInOrder() = runBlocking {
+        val engine = makeEngine()
+        val first = engine.create("first")
+        val second = engine.create("second", dependsOn = listOf(first.id))
+        val third = engine.create("third", dependsOn = listOf(second.id))
+
+        assertEquals(TaskState.WAITING_DEPENDENCY, second.state)
+        assertEquals(TaskState.WAITING_DEPENDENCY, third.state)
+
+        engine.run(first.id)
+        val firstStart = System.currentTimeMillis()
+        while (!first.isTerminal() && System.currentTimeMillis() - firstStart < 5000) delay(20)
+        assertEquals(TaskState.COMPLETED, first.state)
+
+        val secondStart = System.currentTimeMillis()
+        while (!second.isTerminal() && System.currentTimeMillis() - secondStart < 5000) delay(20)
+        assertEquals(TaskState.COMPLETED, second.state)
+
+        val thirdStart = System.currentTimeMillis()
+        while (!third.isTerminal() && System.currentTimeMillis() - thirdStart < 5000) delay(20)
+        assertEquals(TaskState.COMPLETED, third.state)
+    }
+
     @Test
     fun scheduleOrdersDependenciesBeforeDependents() {
         val first = Task("first")
