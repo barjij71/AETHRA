@@ -169,6 +169,22 @@ class TaskDependencyPropagationContractTest {
     }
 
     @Test
+    fun cancellationEventPreservesPreviousState() = runBlocking {
+        val engine = makeEngine()
+        val task = engine.create("cancel-event")
+        val bus = extractEventBus(engine)
+
+        engine.cancel(task.id)
+
+        val cancelEvent = bus.recent()
+            .filterIsInstance<org.aethra.core.domain.TaskEvent>()
+            .last { it.type == "cancel" }
+
+        assertEquals(TaskState.QUEUED, cancelEvent.from)
+        assertEquals(TaskState.CANCELLED, cancelEvent.to)
+    }
+
+    @Test
     fun duplicateTerminalNotificationIsIdempotent() = runBlocking {
         val engine = makeEngine()
         val dep = engine.create("dep")
@@ -250,6 +266,12 @@ private fun makeEngine(): TaskEngine {
     val store = C2TestStorage()
     val bus = EventBus()
     return TaskEngine(store, bus, C2TestRunner(), maxConcurrent = 4)
+}
+
+private fun extractEventBus(engine: TaskEngine): EventBus {
+    val field = TaskEngine::class.java.getDeclaredField("eventBus")
+    field.isAccessible = true
+    return field.get(engine) as EventBus
 }
 
 private fun makeEngineWithRunner(runner: TaskRunner): TaskEngine {
