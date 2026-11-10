@@ -37,7 +37,9 @@ class InMemoryWorkflowStore : WorkflowStore {
 
     @Synchronized
     override fun save(record: WorkflowExecutionRecord) {
-        records[key(record.workflowId, record.taskId)] = record
+        val k = key(record.workflowId, record.taskId)
+        val previous = records[k]
+        records[k] = if (previous == null) record else record.copy(revision = maxOf(record.revision, previous.revision + 1))
     }
 
     @Synchronized
@@ -52,7 +54,9 @@ class JsonFileWorkflowStore(
     @Synchronized
     override fun save(record: WorkflowExecutionRecord) {
         val records = readAll().toMutableMap()
-        records[key(record.workflowId, record.taskId)] = record
+        val k = key(record.workflowId, record.taskId)
+        val previous = records[k]
+        records[k] = if (previous == null) record else record.copy(revision = maxOf(record.revision, previous.revision + 1))
         file.createParentDirectories()
         val tmp = file.resolveSibling(file.fileName.toString() + ".tmp")
         Files.writeString(tmp, json.encodeToString(records))
