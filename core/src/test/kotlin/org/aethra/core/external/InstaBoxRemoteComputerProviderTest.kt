@@ -2,6 +2,7 @@ package org.aethra.core.external
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,6 +81,53 @@ class InstaBoxRemoteComputerProviderTest {
 
         assertTrue(result.isFailure)
         assertTrue(transport.method == null)
+    }
+
+    @Test
+    fun missingSelectedMachineFailsBeforeNetworkCall() = runBlocking {
+        val transport = RecordingTransport(InstaBoxHttpResponse(200, "{}"))
+        val provider = InstaBoxRemoteComputerProvider(
+            machineIdProvider = { "" },
+            transport = transport,
+            apiKeyProvider = InstaBoxApiKeyProvider { "ibk_test" }
+        )
+
+        val result = provider.execute(
+            CapabilityRequest(
+                operation = "remote.exec",
+                arguments = mapOf("cmd" to "echo ok")
+            )
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("InstaBox machine is not selected"))
+        assertTrue(transport.method == null)
+    }
+
+    @Test
+    fun providerNeverExposesApiKeyInResult() = runBlocking {
+        val transport = RecordingTransport(InstaBoxHttpResponse(200, """{"exit":0,"stdout":"ok"}"""))
+        val provider = InstaBoxRemoteComputerProvider(
+            machineIdProvider = { "machine-123" },
+            transport = transport,
+            apiKeyProvider = InstaBoxApiKeyProvider { "ibk_test_secret" }
+        )
+
+        val result = provider.execute(
+            CapabilityRequest(
+                operation = "remote.exec",
+                arguments = mapOf("cmd" to "echo ok")
+            )
+        ).getOrThrow()
+
+        assertTrue(result.success)
+        // API key must never appear in output or evidence
+        assertFalse(result.output.values.any { it.toString().contains("ibk_test_secret") })
+        assertFalse(result.evidence.any { it.contains("ibk_test_secret") })
+        assertFalse(result.error?.contains("ibk_test_secret") == true)
+        // Health check also must not expose key
+        assertTrue(transport.headers?.get("X-API-Key") == "ibk_test_secret")
+        assertTrue(transport.headers.size == 3) // X-API-Key, Content-Type, Accept
     }
 
     @Test

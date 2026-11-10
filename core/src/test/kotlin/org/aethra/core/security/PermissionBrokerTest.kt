@@ -58,4 +58,42 @@ class PermissionBrokerTest {
         // A freshly issued grant is valid (expires after 5 minutes)
         assertTrue(broker.isGrantValid(token as String))
     }
+
+    @Test
+    fun approvalDoesNotLoopAfterValidApproval() = runBlocking {
+        val store = TestStorage()
+        val log = AuditLog(store)
+        val broker = PermissionBroker(log)
+
+        // First request issues a token (approval required)
+        val token1 = broker.requestApproval("agent", RiskClass.SENSITIVE, "send", "x")
+        assertNotNull(token1)
+
+        // User grants approval
+        broker.recordDecision(token1 as String, granted = true, actor = "agent", reason = "user granted")
+
+        // Subsequent request for the same actor/risk/operation/target returns null
+        // (already approved) — no infinite approval loop.
+        val token2 = broker.requestApproval("agent", RiskClass.SENSITIVE, "send", "x")
+        assertNull(token2)
+    }
+
+    @Test
+    fun deniedApprovalDoesNotLoop() = runBlocking {
+        val store = TestStorage()
+        val log = AuditLog(store)
+        val broker = PermissionBroker(log)
+
+        // First request issues a token
+        val token1 = broker.requestApproval("agent", RiskClass.SENSITIVE, "send", "x")
+        assertNotNull(token1)
+
+        // User denies approval
+        broker.recordDecision(token1 as String, granted = false, actor = "agent", reason = "user denied")
+
+        // Subsequent request issues a new token (denial does not grant approval)
+        val token2 = broker.requestApproval("agent", RiskClass.SENSITIVE, "send", "x")
+        assertNotNull(token2)
+        assertTrue(token1 as String != token2)
+    }
 }
