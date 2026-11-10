@@ -1,0 +1,95 @@
+package org.aethra.core.external
+
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class InstaBoxRemoteComputerProviderTest {
+    @Test
+    fun execUsesApiKeyAndMachineEndpoint() = runBlocking {
+        val transport = RecordingTransport(InstaBoxHttpResponse(200, """{"exit":0,"stdout":"ok"}"""))
+        val provider = InstaBoxRemoteComputerProvider(
+            machineId = "machine-123",
+            transport = transport,
+            apiKeyProvider = InstaBoxApiKeyProvider { "ibk_test" }
+        )
+
+        val result = provider.execute(
+            CapabilityRequest(
+                operation = "remote.exec",
+                arguments = mapOf("cmd" to "printf ok")
+            )
+        ).getOrThrow()
+
+        assertTrue(result.success)
+        assertEquals("POST", transport.method)
+        assertEquals("/v1/machines/machine-123/exec", transport.path)
+        assertEquals("ibk_test", transport.headers["X-API-Key"])
+        assertTrue(transport.body?.contains("printf ok") == true)
+    }
+
+    @Test
+    fun missingApiKeyFailsBeforeNetworkCall() = runBlocking {
+        val transport = RecordingTransport(InstaBoxHttpResponse(200, "{}"))
+        val provider = InstaBoxRemoteComputerProvider(
+            machineId = "machine-123",
+            transport = transport,
+            apiKeyProvider = InstaBoxApiKeyProvider { null }
+        )
+
+        val result = provider.execute(
+            CapabilityRequest(
+                operation = "remote.exec",
+                arguments = mapOf("cmd" to "echo ok")
+            )
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(transport.method == null)
+    }
+
+    @Test
+    fun blockedOperationIsRejectedByRouter() = runBlocking {
+        val registry = ExternalCapabilityRegistry()
+        registry.register(
+            InstaBoxRemoteComputerProvider(
+                machineId = "machine-123",
+                transport = RecordingTransport(InstaBoxHttpResponse(200, "{}")),
+                apiKeyProvider = InstaBoxApiKeyProvider { "ibk_test" }
+            )
+        )
+
+        val result = ExternalCapabilityRouter(registry).execute(
+            "instabox.remote",
+            CapabilityRequest(
+                operation = "remote.exec",
+                arguments = mapOf("cmd" to "port_scan localhost")
+            )
+        )
+
+        assertTrue(result.isFailure)
+    }
+
+    private class RecordingTransport(
+        private val response: InstaBoxHttpResponse
+    ) : InstaBoxTransport {
+        var method: String? = null
+        var path: String? = null
+        var body: String? = null
+        var headers: Map<String, String> = emptyMap()
+
+        override suspend fun request(
+            method: String,
+            path: String,
+            body: String?,
+            headers: Map<String, String>
+        ): InstaBoxHttpResponse {
+            this.method = method
+            this.path = path
+            this.body = body
+            this.headers = headers
+            return response
+        }
+    }
+}
