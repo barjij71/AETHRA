@@ -179,10 +179,10 @@ class TaskDependencyPropagationContractTest {
 
         val cancelEvent = bus.recent()
             .filterIsInstance<org.aethra.core.domain.TaskEvent>()
-            .last { it.type == "cancel" }
+            .last { it.source == "cancel" }
 
-        assertEquals(TaskState.QUEUED, cancelEvent.from)
-        assertEquals(TaskState.CANCELLED, cancelEvent.to)
+        assertEquals(TaskState.QUEUED, cancelEvent.previousState)
+        assertEquals(TaskState.CANCELLED, cancelEvent.newState)
     }
 
     @Test

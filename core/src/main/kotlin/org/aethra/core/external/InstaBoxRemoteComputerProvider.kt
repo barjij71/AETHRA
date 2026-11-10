@@ -29,7 +29,7 @@ class InstaBoxRemoteComputerProvider(
     override suspend fun health(): CapabilityHealth {
         if (apiKeyProvider.apiKey()?.isNotBlank() != true) return CapabilityHealth.UNAVAILABLE
         return runCatching {
-            val response = transport.request("GET", "/v1/machines/$machineId", headers())
+            val response = transport.request("GET", "/v1/machines/$machineId", headers = headers())
             if (response.statusCode in 200..299) CapabilityHealth.READY
             else CapabilityHealth.DEGRADED
         }.getOrElse { CapabilityHealth.UNAVAILABLE }
