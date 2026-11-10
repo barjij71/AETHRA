@@ -127,11 +127,12 @@ class TaskEngine(
             TaskState.APPROVED, TaskState.RUNNING,
             mapOf("reason" to reason)
         ))
-        // The ATOMIC start guarantees the coroutine begins even if cancellation
-        // races with startup, while still dispatching asynchronously so run()
-        // preserves its RUNNING contract. The gate inside execute() refuses to
-        // run a fresh cycle for a task that has since been cancelled or paused.
-        val job = scope.launch(start = CoroutineStart.ATOMIC) {
+        // The DEFAULT start dispatches the coroutine to the dispatcher so
+        // run() preserves its RUNNING contract (returns before the coroutine
+        // completes). The gate inside execute() refuses to run a fresh cycle
+        // for a task that has since been cancelled or paused, and
+        // claimExecution() guarantees exactly one racing duplicate proceeds.
+        val job = scope.launch(start = CoroutineStart.DEFAULT) {
             try {
                 execute(task)
             } finally {

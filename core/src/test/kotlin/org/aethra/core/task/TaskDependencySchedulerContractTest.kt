@@ -160,6 +160,16 @@ class TaskDependencySchedulerContractTest {
             delay(20)
         }
         assertEquals(TaskState.COMPLETED, dependency.state)
+
+        // Dependency completion wakes the dependent via onTaskTerminal →
+        // wakeReadyDependents → wakeTask. This runs synchronously on the
+        // coroutine thread, but the test thread may observe COMPLETED before
+        // the wake-up has been applied. Wait for the dependent to reflect the
+        // wake-up instead of checking immediately.
+        val wakeStart = System.currentTimeMillis()
+        while (dependent.state != TaskState.WAITING_APPROVAL && System.currentTimeMillis() - wakeStart < 5000) {
+            delay(20)
+        }
         assertEquals(TaskState.WAITING_APPROVAL, dependent.state)
 
         engine.approve(dependent.id, granted = true, reason = "contract test")

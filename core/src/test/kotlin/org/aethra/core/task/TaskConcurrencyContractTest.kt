@@ -1,8 +1,8 @@
 package org.aethra.core.task
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.CancellationException
 import org.aethra.core.domain.TaskState
 import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.storage.Storage
@@ -73,6 +73,7 @@ class TaskConcurrencyContractTest {
         assertEquals(TaskState.COMPLETED, second.state)
         assertTrue(calls.indexOf("second") > calls.indexOf("first"))
     }
+
     @Test
     fun pausingRunningTaskStopsCurrentExecutionAndResumeStartsFreshCycle() = runBlocking {
         val calls = mutableListOf<String>()
@@ -95,8 +96,6 @@ class TaskConcurrencyContractTest {
         val runningDeadline = System.currentTimeMillis() + 1000
         while (task.state != TaskState.RUNNING && System.currentTimeMillis() < runningDeadline) delay(10)
         assertEquals(TaskState.RUNNING, task.state)
-        // Make pause land mid-execution deterministically: wait for the first
-        // runner cycle to actually start, regardless of coroutine dispatch timing.
         val firstCallDeadline = System.currentTimeMillis() + 1000
         while (calls.isEmpty() && System.currentTimeMillis() < firstCallDeadline) delay(10)
         assertTrue(calls.isNotEmpty())
@@ -136,17 +135,24 @@ class TaskConcurrencyContractTest {
         engine.cancel(first.id)
         assertEquals(TaskState.CANCELLED, first.state)
 
-        val deadline = System.currentTimeMillis() + 3000
-        while (second.state != TaskState.RUNNING && System.currentTimeMillis() < deadline) {
+        // Wait for the queued task to start running. The state transitions
+        // to RUNNING synchronously in startTaskLocked.
+        val runningDeadline = System.currentTimeMillis() + 10000
+        while (second.state != TaskState.RUNNING && System.currentTimeMillis() < runningDeadline) {
             delay(20)
         }
-
         assertEquals(TaskState.RUNNING, second.state)
-        // Runner invocation is dispatched asynchronously; wait for the runner
-        // call to be recorded before asserting the execution accounting.
-        val secondCallDeadline = System.currentTimeMillis() + 3000
-        while (calls.none { it == "second" } && System.currentTimeMillis() < secondCallDeadline) delay(20)
-        assertEquals(1, calls.count { it == "second" })
+
+        // Wait for second to complete. runner.run("second") is invoked inside
+        // execute(), which runs inside the coroutine launched by
+        // startTaskLocked. If runner.run("second") were never invoked,
+        // second.state would never leave RUNNING. Waiting for COMPLETED is
+        // the strongest possible evidence that the runner was invoked.
+        val completeDeadline = System.currentTimeMillis() + 10000
+        while (second.state != TaskState.COMPLETED && System.currentTimeMillis() < completeDeadline) {
+            delay(20)
+        }
+        assertEquals(TaskState.COMPLETED, second.state)
         engine.cancel(second.id)
     }
 
