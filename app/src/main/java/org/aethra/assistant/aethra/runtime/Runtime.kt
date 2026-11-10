@@ -42,9 +42,6 @@ class Runtime(private val context: Context) {
     private var adapters: PlatformAdapters? = null
     private var memoryHookActive = false
 
-    val platformAdapters: PlatformAdapters?
-        get() = adapters
-
     fun build(): Runtime = this
 
     fun start(): Result<Unit> = runBlocking(scope.coroutineContext) {
