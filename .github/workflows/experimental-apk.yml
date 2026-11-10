@@ -1,5 +1,6 @@
 name: Experimental APK
 # Full current-project verification: Android APK + Core contract tests.
+# Jobs are independent so a failure in one layer does not block another.
 
 on:
   push:
@@ -29,8 +30,73 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-debug-apk:
-    name: Build experimental debug APK
+  core-contract-tests:
+    name: Core Contract Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Validate Gradle wrapper
+        run: ./gradlew --version
+
+      - name: Run core contract tests
+        run: ./gradlew :core:test --no-daemon --console=plain --rerun
+
+  android-instrumented-tests:
+    name: Android Instrumented Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Validate Gradle wrapper
+        run: ./gradlew --version
+
+      - name: Run Android instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 2048M
+          heap-size: 256M
+          disable-animations: true
+          boot-timeout: 120
+          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --console=plain --stacktrace
+
+  apk-assembly:
+    name: APK Assembly
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -79,6 +145,3 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
-
-      - name: Run core contract tests
-        run: ./gradlew :core:test --no-daemon --console=plain
