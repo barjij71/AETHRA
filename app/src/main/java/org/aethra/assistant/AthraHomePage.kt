@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -58,7 +57,7 @@ fun AthraHomePage(
         ) {
             Text(
                 text = stringResource(id = R.string.home_title),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
@@ -79,7 +78,7 @@ fun AthraHomePage(
             OutlinedTextField(
                 value = commandText,
                 onValueChange = { commandText = it },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(stringResource(id = R.string.command_placeholder)) }
             )
             Button(onClick = {
