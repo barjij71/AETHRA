@@ -41,14 +41,20 @@ fun AppNavigation(
         composable("home") {
             AthraHomePage(
                 runtime = runtime,
-                onNavigateToSettings = { navController.navigate("settings") }
+                onNavigateToSettings = {
+                    navController.navigate("settings")
+                    Unit
+                }
             )
         }
 
         composable("settings") {
             SettingsScreen(
                 visualModeState = visualModeState,
-                onNavigateHome = { navController.navigate("home") { popUpTo("home") { inclusive = true } } }
+                onNavigateHome = {
+                    navController.navigate("home", inclusive = true)
+                    Unit
+                }
             )
         }
 

@@ -1,6 +1,7 @@
 package org.aethra.assistant.aethra.adapters
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
@@ -21,17 +22,17 @@ class EncryptedInstaBoxApiKeyStore(private val context: Context) : InstaBoxApiKe
         private const val KEY_API_KEY = "instabox.api_key"
     }
 
-    private val encryptedSharedPreferences: androidx.security.crypto.EncryptedSharedPreferences by lazy {
+    private val encryptedSharedPreferences: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
 
-        androidx.security.crypto.EncryptedSharedPreferences.create(
+        EncryptedSharedPreferences.create(
+            context,
             PREFS_NAME,
             masterKey,
-            context,
-            androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
 
@@ -39,8 +40,6 @@ class EncryptedInstaBoxApiKeyStore(private val context: Context) : InstaBoxApiKe
         return try {
             encryptedSharedPreferences.getString(KEY_API_KEY, null)
         } catch (e: Exception) {
-            // Corrupt or inaccessible encrypted data: treat as no key stored.
-            // Never expose the key or exception details to callers.
             null
         }
     }
