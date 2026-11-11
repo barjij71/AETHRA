@@ -96,7 +96,7 @@ fun SettingsScreen(
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth().align(Alignment.BottomEnd),
+            modifier = Modifier.fillMaxWidth().align(Alignment.End),
             horizontalArrangement = Arrangement.End
         ) {
             OutlinedButton(

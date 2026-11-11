@@ -6,7 +6,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import org.aethra.assistant.aethra.ui.AthraHomePage
+import org.aethra.assistant.AthraHomePage
 import org.aethra.assistant.aethra.ui.DeviceScreen
 import org.aethra.assistant.aethra.ui.SettingsScreen
 import org.aethra.assistant.aethra.ui.VisualModeState
@@ -31,7 +31,7 @@ fun AppNavigation(
     visualModeState: VisualModeState,
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier
 ) {
-    val navController = remember { rememberNavController() }
+    val navController = rememberNavController()
 
     NavHost(
         navController = navController,
@@ -52,7 +52,9 @@ fun AppNavigation(
             SettingsScreen(
                 visualModeState = visualModeState,
                 onNavigateHome = {
-                    navController.navigate("home", inclusive = true)
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
                     Unit
                 }
             )
