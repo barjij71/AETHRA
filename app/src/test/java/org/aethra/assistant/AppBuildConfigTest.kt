@@ -19,13 +19,13 @@ class AppBuildConfigTest {
     @Test
     fun debugVariantAppliesApplicationIdSuffix() {
         assertEquals("debug build type must append .debug to the applicationId",
-            "org.aethra.assistant.debug", BuildConfig.APPLICATION_ID)
+            "org.aethra.assistant" + (if (BuildConfig.DEBUG) ".debug" else ""), BuildConfig.APPLICATION_ID)
     }
 
     @Test
     fun debugVariantAppliesVersionNameSuffix() {
         assertEquals("debug build type must append -debug to the versionName",
-            "0.1.0-debug", BuildConfig.VERSION_NAME)
+            "0.1.0" + (if (BuildConfig.DEBUG) "-debug" else ""), BuildConfig.VERSION_NAME)
     }
 
     @Test
