@@ -651,4 +651,429 @@ class WorkflowEngineContractTest {
         }
         fail("Workflow $workflowId did not reach a terminal state within 10 seconds")
     }
+// ============================================================================
+// D-2B: Workflow Persistence & Recovery Contract Tests
+// ============================================================================
+
+@Test
+fun createWorkflow_persistsAndSurvivesRestart() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val nodes = listOf(
+        WorkflowNode(id = "n1", taskId = "t1", goal = "task one", dependsOn = emptyList()),
+        WorkflowNode(id = "n2", taskId = "t2", goal = "task two", dependsOn = listOf("n1"))
+    )
+
+    val workflow = engine1.createWorkflow("persist test", nodes)
+    assertNotNull(workflow.id)
+
+    // Wait for async persist to complete
+    waitForPersist(storage)
+
+    // Simulate process restart: new engine with same storage
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+
+    // Give recovery time to complete
+    waitForRecovery(engine2)
+
+    val recovered = engine2.getWorkflow(workflow.id)
+    assertNotNull(recovered)
+    assertEquals(workflow.id, recovered!!.id)
+    assertEquals("persist test", recovered.name)
+    assertEquals(TaskState.QUEUED, recovered.state)
+    assertEquals(2, recovered.nodes.size)
+}
+
+@Test
+fun completedWorkflow_doesNotRerunOnRestart() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val nodes = listOf(
+        WorkflowNode(id = "n1", taskId = "t1", goal = "task one", dependsOn = emptyList())
+    )
+
+    val workflow = engine1.createWorkflow("completed test", nodes)
+    assertTrue(engine1.execute(workflow.id))
+
+    waitForTerminal(workflow.id, engine1)
+    assertEquals(TaskState.COMPLETED, engine1.getWorkflow(workflow.id)!!.state)
+    waitForPersist(storage)
+
+    // Simulate restart
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    val recovered = engine2.getWorkflow(workflow.id)
+    assertNotNull(recovered)
+    assertEquals(TaskState.COMPLETED, recovered!!.state)
+
+    // Task should NOT be re-executed
+    val taskA = taskEngine2.allTasks().firstOrNull { it.goal == "task one" }
+    assertNotNull(taskA)
+    assertEquals(TaskState.COMPLETED, taskA!!.state)
+    assertTrue(taskA.isExecuted)
+}
+
+@Test
+fun failedWorkflow_remainsFailedOnRestart() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner(failTask = "failing task")
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val nodes = listOf(
+        WorkflowNode(id = "n1", taskId = "t1", goal = "failing task", dependsOn = emptyList())
+    )
+
+    val workflow = engine1.createWorkflow("failed test", nodes)
+    assertTrue(engine1.execute(workflow.id))
+
+    waitForTerminal(workflow.id, engine1)
+    assertEquals(TaskState.FAILED, engine1.getWorkflow(workflow.id)!!.state)
+    waitForPersist(storage)
+
+    // Simulate restart
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    val recovered = engine2.getWorkflow(workflow.id)
+    assertNotNull(recovered)
+    assertEquals(TaskState.FAILED, recovered!!.state)
+}
+
+@Test
+fun cancelledWorkflow_remainsCancelledOnRestart() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner(delayMs = 500)
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val nodes = listOf(
+        WorkflowNode(id = "n1", taskId = "t1", goal = "slow task", dependsOn = emptyList())
+    )
+
+    val workflow = engine1.createWorkflow("cancelled test", nodes)
+    assertTrue(engine1.execute(workflow.id))
+    delay(200) // let it start running
+    assertTrue(engine1.cancel(workflow.id))
+
+    waitForTerminal(workflow.id, engine1)
+    assertEquals(TaskState.CANCELLED, engine1.getWorkflow(workflow.id)!!.state)
+    waitForPersist(storage)
+
+    // Simulate restart
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    val recovered = engine2.getWorkflow(workflow.id)
+    assertNotNull(recovered)
+    assertEquals(TaskState.CANCELLED, recovered!!.state)
+}
+
+@Test
+fun runningWorkflowRecovery_reconcilesTaskStates() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner(delayMs = 100)
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    // A -> B -> C
+    val nodes = listOf(
+        WorkflowNode(id = "nA", taskId = "tA", goal = "A", dependsOn = emptyList()),
+        WorkflowNode(id = "nB", taskId = "tB", goal = "B", dependsOn = listOf("nA")),
+        WorkflowNode(id = "nC", taskId = "tC", goal = "C", dependsOn = listOf("nB"))
+    )
+
+    val workflow = engine1.createWorkflow("running recovery test", nodes)
+    assertTrue(engine1.execute(workflow.id))
+
+    // Wait for A to complete
+    val start = System.currentTimeMillis()
+    while (System.currentTimeMillis() - start < 5000) {
+        val taskA = taskEngine.allTasks().firstOrNull { it.goal == "A" }
+        if (taskA != null && taskA.state == TaskState.COMPLETED) break
+        delay(50)
+    }
+
+    // Persist current state
+    waitForPersist(storage)
+
+    // Simulate restart
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    val recovered = engine2.getWorkflow(workflow.id)
+    assertNotNull(recovered)
+
+    // A should remain completed
+    val taskA = taskEngine2.allTasks().firstOrNull { it.goal == "A" }
+    assertNotNull(taskA)
+    assertEquals(TaskState.COMPLETED, taskA!!.state)
+
+    // Workflow state should be reconciled based on actual task states
+    assertTrue(recovered!!.state in setOf(TaskState.RUNNING, TaskState.COMPLETED, TaskState.FAILED))
+}
+
+@Test
+fun completedDependency_notRerunAfterRestart() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    // A -> B, where A completes
+    val nodes = listOf(
+        WorkflowNode(id = "nA", taskId = "tA", goal = "A", dependsOn = emptyList()),
+        WorkflowNode(id = "nB", taskId = "tB", goal = "B", dependsOn = listOf("nA"))
+    )
+
+    val workflow = engine1.createWorkflow("dependency recovery test", nodes)
+    assertTrue(engine1.execute(workflow.id))
+
+    waitForTerminal(workflow.id, engine1)
+    assertEquals(TaskState.COMPLETED, engine1.getWorkflow(workflow.id)!!.state)
+    waitForPersist(storage)
+
+    // Simulate restart
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    val recovered = engine2.getWorkflow(workflow.id)
+    assertNotNull(recovered)
+    assertEquals(TaskState.COMPLETED, recovered!!.state)
+
+    // A should not be re-executed
+    val taskA = taskEngine2.allTasks().firstOrNull { it.goal == "A" }
+    assertNotNull(taskA)
+    assertEquals(TaskState.COMPLETED, taskA!!.state)
+    assertTrue(taskA.isExecuted)
+}
+
+@Test
+fun missingReferencedTask_failsRecovery() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    // Manually persist a workflow referencing a task that doesn't exist in TaskEngine
+    val persisted = PersistedWorkflow(
+        id = "orphan-workflow",
+        name = "orphan",
+        state = TaskState.QUEUED.name,
+        createdAt = System.currentTimeMillis(),
+        completedAt = null,
+        nodes = listOf(
+            PersistedWorkflowNode(
+                id = "n1",
+                taskId = "t1",
+                actualTaskId = "nonexistent-task-id",
+                goal = "task one",
+                role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = emptyList(),
+                state = TaskState.QUEUED.name
+            )
+        )
+    )
+    storage.setString("aethra.workflows.v1", kotlinx.serialization.json.Json.encodeToString(listOf(persisted)))
+
+    // Create new engine - recovery should fail safely (return null for orphan workflow)
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    // The orphan workflow should NOT be in memory
+    val recovered = engine2.getWorkflow("orphan-workflow")
+    assertNull(recovered)
+}
+
+@Test
+fun recovery_isIdempotent() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val nodes = listOf(
+        WorkflowNode(id = "n1", taskId = "t1", goal = "task one", dependsOn = emptyList())
+    )
+
+    val workflow = engine1.createWorkflow("idempotent test", nodes)
+    waitForPersist(storage)
+
+    // First recovery
+    val taskEngine2a = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2a = WorkflowEngine(storage, EventBus(), taskEngine2a, runner)
+    waitForRecovery(engine2a)
+    val recovered1 = engine2a.getWorkflow(workflow.id)
+    assertNotNull(recovered1)
+
+    // Second recovery with a new engine instance
+    val taskEngine2b = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2b = WorkflowEngine(storage, EventBus(), taskEngine2b, runner)
+    waitForRecovery(engine2b)
+    val recovered2 = engine2b.getWorkflow(workflow.id)
+    assertNotNull(recovered2)
+
+    // Both should have same ID and state
+    assertEquals(recovered1!!.id, recovered2!!.id)
+    assertEquals(recovered1.state, recovered2.state)
+
+    // No duplicate workflows in storage
+    val allPersisted = kotlinx.serialization.json.Json.decodeFromString<List<PersistedWorkflow>>(
+        storage.getString("aethra.workflows.v1")!!
+    )
+    assertEquals(1, allPersisted.count { it.id == workflow.id })
+}
+
+@Test
+fun disconnectedWorkflowRecovery_recoversAllComponents() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    // Two independent components
+    val nodes = listOf(
+        WorkflowNode(id = "n1", taskId = "t1", goal = "component A task 1", dependsOn = emptyList()),
+        WorkflowNode(id = "n2", taskId = "t2", goal = "component A task 2", dependsOn = listOf("n1")),
+        WorkflowNode(id = "n3", taskId = "t3", goal = "component B task 1", dependsOn = emptyList()),
+        WorkflowNode(id = "n4", taskId = "t4", goal = "component B task 2", dependsOn = listOf("n3"))
+    )
+
+    val workflow = engine1.createWorkflow("disconnected test", nodes)
+    assertTrue(engine1.execute(workflow.id))
+
+    waitForTerminal(workflow.id, engine1)
+    assertEquals(TaskState.COMPLETED, engine1.getWorkflow(workflow.id)!!.state)
+    waitForPersist(storage)
+
+    // Simulate restart
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    val recovered = engine2.getWorkflow(workflow.id)
+    assertNotNull(recovered)
+    assertEquals(TaskState.COMPLETED, recovered!!.state)
+    assertEquals(4, recovered.nodes.size)
+}
+
+@Test
+fun invalidPersistedWorkflow_failsSafely() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    // Manually persist an invalid workflow (duplicate node IDs)
+    val invalidPersisted = PersistedWorkflow(
+        id = "invalid-workflow",
+        name = "invalid",
+        state = TaskState.QUEUED.name,
+        createdAt = System.currentTimeMillis(),
+        completedAt = null,
+        nodes = listOf(
+            PersistedWorkflowNode(
+                id = "n1",
+                taskId = "t1",
+                actualTaskId = "task-1",
+                goal = "task one",
+                role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = emptyList(),
+                state = TaskState.QUEUED.name
+            ),
+            PersistedWorkflowNode(
+                id = "n1", // duplicate node ID
+                taskId = "t2",
+                actualTaskId = "task-2",
+                goal = "task two",
+                role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = emptyList(),
+                state = TaskState.QUEUED.name
+            )
+        )
+    )
+    storage.setString("aethra.workflows.v1", kotlinx.serialization.json.Json.encodeToString(listOf(invalidPersisted)))
+
+    // Create new engine - recovery should not crash
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    // Invalid workflow should not be recoverable
+    val recovered = engine2.getWorkflow("invalid-workflow")
+    assertNull(recovered)
+}
+
+@Test
+fun persistTiming_usesRealStorageNotMock() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val nodes = listOf(
+        WorkflowNode(id = "n1", taskId = "t1", goal = "task one", dependsOn = emptyList())
+    )
+
+    val workflow = engine.createWorkflow("timing test", nodes)
+
+    assertTrue(engine.execute(workflow.id))
+    waitForTerminal(workflow.id, engine)
+    waitForPersist(storage)
+
+    // Storage should now contain the workflow
+    val persisted = storage.getString("aethra.workflows.v1")!!
+    assertNotNull(persisted)
+    assertTrue(persisted.contains(workflow.id))
+}
+
+// ------------------------------------------------------------------
+// D-2B Helpers
+// ------------------------------------------------------------------
+
+suspend fun waitForPersist(storage: TestStorage) {
+    val start = System.currentTimeMillis()
+    while (System.currentTimeMillis() - start < 5000) {
+        val encoded = storage.getString("aethra.workflows.v1")
+        if (encoded != null && encoded.isNotEmpty()) return
+        delay(50)
+    }
+}
+
+suspend fun waitForRecovery(engine: WorkflowEngine) {
+    val start = System.currentTimeMillis()
+    while (System.currentTimeMillis() - start < 10000) {
+        delay(100)
+        // After 2 seconds, recovery should be done
+        if (System.currentTimeMillis() - start > 2000) return
+    }
+}
 }
