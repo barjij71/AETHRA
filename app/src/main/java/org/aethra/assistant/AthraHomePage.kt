@@ -144,4 +144,5 @@ fun AthraHomePage(
     }
 }
 
+@Composable
 private fun stringResource(id: Int): String = androidx.compose.ui.res.stringResource(id = id)
