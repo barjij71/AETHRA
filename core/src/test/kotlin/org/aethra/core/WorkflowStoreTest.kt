@@ -53,6 +53,39 @@ class WorkflowStoreTest {
     }
 
     @Test
+    fun persistsAuditEventsAcrossStoreRecreation() {
+        val file = kotlin.io.path.createTempFile("aethra-audit-", ".json")
+        try {
+            JsonFileWorkflowStore(file).save(
+                WorkflowExecutionRecord(
+                    workflowId = "wf-audit",
+                    taskId = "task-audit",
+                    audit = listOf(
+                        AuditEvent(
+                            eventId = "event-1",
+                            workflowId = "wf-audit",
+                            taskId = "task-audit",
+                            stepId = "step-a",
+                            skillId = "skill-a",
+                            skillVersion = "1.0.0",
+                            event = "step.finished",
+                            status = StepResult.Status.SUCCEEDED,
+                            artifactIds = listOf("artifact-1")
+                        )
+                    )
+                )
+            )
+            val loaded = JsonFileWorkflowStore(file).load("wf-audit", "task-audit")
+            assertNotNull(loaded)
+            assertEquals(1, loaded.audit.size)
+            assertEquals("skill-a", loaded.audit.single().skillId)
+            assertEquals("artifact-1", loaded.audit.single().artifactIds.single())
+        } finally {
+            kotlin.io.path.deleteIfExists(file)
+        }
+    }
+
+    @Test
     fun nonIdempotentRunningStepRecoversAsUnknownOutcome() = kotlinx.coroutines.test.runTest {
         val registry = org.aethra.core.skills.SkillRegistry()
         registry.register(org.aethra.core.skills.SkillManifest(
