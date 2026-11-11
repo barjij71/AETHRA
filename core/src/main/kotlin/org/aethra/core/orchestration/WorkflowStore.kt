@@ -18,11 +18,28 @@ data class StepExecutionRecord(
 )
 
 @Serializable
+data class AuditEvent(
+    val eventId: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val workflowId: String,
+    val taskId: String,
+    val stepId: String? = null,
+    val skillId: String? = null,
+    val skillVersion: String? = null,
+    val event: String,
+    val status: StepResult.Status? = null,
+    val reason: String? = null,
+    val artifactIds: List<String> = emptyList(),
+    val approvalId: String? = null
+)
+
+@Serializable
 data class WorkflowExecutionRecord(
     val workflowId: String,
     val taskId: String,
     val revision: Int = 1,
-    val steps: Map<String, StepExecutionRecord> = emptyMap()
+    val steps: Map<String, StepExecutionRecord> = emptyMap(),
+    val audit: List<AuditEvent> = emptyList()
 )
 
 interface WorkflowStore {
