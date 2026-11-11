@@ -51,6 +51,31 @@ class Orchestrator(
 
         val persisted = workflowStore.load(workflow.id, taskId)
         val results = LinkedHashMap<String, StepResult>()
+        val auditEvents = (persisted?.audit ?: emptyList()).toMutableList()
+
+        fun audit(
+            step: WorkflowStep? = null,
+            event: String,
+            status: StepResult.Status? = null,
+            reason: String? = null,
+            artifactIds: List<String> = emptyList(),
+            approvalId: String? = null
+        ) {
+            auditEvents += AuditEvent(
+                eventId = UUID.randomUUID().toString(),
+                workflowId = workflow.id,
+                taskId = taskId,
+                stepId = step?.id,
+                skillId = step?.skillId,
+                skillVersion = step?.let { registry.get(it.skillId)?.manifest?.version },
+                event = event,
+                status = status,
+                reason = reason,
+                artifactIds = artifactIds,
+                approvalId = approvalId
+            )
+        }
+
         persisted?.steps?.forEach { (id, record) ->
             val step = workflow.steps.firstOrNull { it.id == id } ?: return@forEach
             when (record.status) {
@@ -59,10 +84,9 @@ class Orchestrator(
                 StepResult.Status.RUNNING -> {
                     val idempotent = registry.get(step.skillId)?.manifest?.idempotent == true
                     if (!idempotent) {
-                        results[id] = StepResult(
-                            StepResult.Status.UNKNOWN_OUTCOME,
-                            reason = "recovered non-idempotent step; reconciliation required"
-                        )
+                        val reason = "recovered non-idempotent step; reconciliation required"
+                        results[id] = StepResult(StepResult.Status.UNKNOWN_OUTCOME, reason = reason)
+                        audit(step, "recovery.unknown_outcome", StepResult.Status.UNKNOWN_OUTCOME, reason)
                     }
                 }
                 StepResult.Status.FAILED, StepResult.Status.BLOCKED,
@@ -88,11 +112,13 @@ class Orchestrator(
                             artifactId = result.output?.id,
                             idempotencyKey = step.idempotencyKey(taskId)
                         )
-                    }
+                    },
+                    audit = auditEvents.toList()
                 )
             )
         }
 
+        audit(event = "workflow.started")
         persistState()
 
         coroutineScope {
@@ -107,7 +133,9 @@ class Orchestrator(
                         )
                     }
                 }.forEach { step ->
-                    results[step.id] = StepResult(StepResult.Status.BLOCKED, reason = "dependency failed")
+                    val reason = "dependency failed"
+                    results[step.id] = StepResult(StepResult.Status.BLOCKED, reason = reason)
+                    audit(step, "step.blocked", StepResult.Status.BLOCKED, reason)
                     remaining.remove(step)
                 }
                 persistState()
@@ -119,12 +147,17 @@ class Orchestrator(
                     remaining.remove(step)
 
                     results[step.id] = StepResult(StepResult.Status.RUNNING)
+                    audit(step, "step.started", StepResult.Status.RUNNING)
                     persistState()
 
                     active[step.id] = async {
                         if (step.riskTier >= RiskTier.TIER_2) {
                             val approvalId = step.approvalId
-                                ?: return@async StepResult(StepResult.Status.BLOCKED, reason = "approval required")
+                                ?: run {
+                                    val reason = "approval required"
+                                    audit(step, "approval.required", StepResult.Status.BLOCKED, reason)
+                                    return@async StepResult(StepResult.Status.BLOCKED, reason = reason)
+                                }
                             if (!policy.consumeApproval(
                                     approvalId,
                                     step.approvalActor,
@@ -133,25 +166,40 @@ class Orchestrator(
                                     step.approvalPayload
                                 )
                             ) {
-                                return@async StepResult(StepResult.Status.BLOCKED, reason = "approval invalid or already used")
+                                val reason = "approval invalid or already used"
+                                audit(step, "approval.rejected", StepResult.Status.BLOCKED, reason, approvalId = approvalId)
+                                return@async StepResult(StepResult.Status.BLOCKED, reason = reason)
                             }
+                            audit(step, "approval.consumed", approvalId = approvalId)
                         }
 
                         if (!policy.allows(step.skillId, "execute", step.inputArtifactIds)) {
-                            return@async StepResult(StepResult.Status.BLOCKED, reason = "blocked by core policy")
+                            val reason = "blocked by core policy"
+                            audit(step, "policy.blocked", StepResult.Status.BLOCKED, reason)
+                            return@async StepResult(StepResult.Status.BLOCKED, reason = reason)
                         }
 
                         val dependencyInputs = step.dependsOn.mapNotNull { dep -> results[dep]?.output }
                         val explicitInputs = step.inputArtifactIds.mapNotNull(artifactStore::get)
                         if (explicitInputs.size != step.inputArtifactIds.size) {
-                            return@async StepResult(StepResult.Status.BLOCKED, reason = "missing required artifact")
+                            val reason = "missing required artifact"
+                            audit(step, "artifact.missing", StepResult.Status.BLOCKED, reason)
+                            return@async StepResult(StepResult.Status.BLOCKED, reason = reason)
                         }
                         val inputs = (dependencyInputs + explicitInputs).distinctBy { it.id }
-                        runCatching {
+                        val result = runCatching {
                             withTimeout(30.seconds) { executor.execute(step, inputs) }
                         }.getOrElse {
                             StepResult(StepResult.Status.FAILED, reason = it.message ?: "execution error")
                         }
+                        audit(
+                            step,
+                            "step.finished",
+                            result.status,
+                            result.reason,
+                            artifactIds = listOfNotNull(result.output?.id)
+                        )
+                        result
                     }
                 }
 
@@ -169,16 +217,16 @@ class Orchestrator(
                     }
                 } else if (remaining.isNotEmpty()) {
                     remaining.forEach {
-                        results[it.id] = StepResult(
-                            StepResult.Status.BLOCKED,
-                            reason = "dependency graph cannot make progress"
-                        )
+                        val reason = "dependency graph cannot make progress"
+                        results[it.id] = StepResult(StepResult.Status.BLOCKED, reason = reason)
+                        audit(it, "step.blocked", StepResult.Status.BLOCKED, reason)
                     }
                     remaining.clear()
                     persistState()
                 }
             }
         }
+        audit(event = "workflow.finished")
         persistState()
         return results
     }
