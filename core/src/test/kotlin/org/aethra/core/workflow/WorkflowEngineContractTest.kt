@@ -989,7 +989,11 @@ fun invalidPersistedWorkflow_failsSafely() = runBlocking {
     val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
     val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
 
-    // Manually persist an invalid workflow (duplicate node IDs)
+    // Create actual tasks in TaskEngine so their IDs are valid
+    val task1 = taskEngine.create("task one")
+    val task2 = taskEngine.create("task two")
+
+    // Manually persist an invalid workflow (duplicate node IDs) referencing real tasks
     val invalidPersisted = PersistedWorkflow(
         id = "invalid-workflow",
         name = "invalid",
@@ -1000,7 +1004,7 @@ fun invalidPersistedWorkflow_failsSafely() = runBlocking {
             PersistedWorkflowNode(
                 id = "n1",
                 taskId = "t1",
-                actualTaskId = "task-1",
+                actualTaskId = task1.id,
                 goal = "task one",
                 role = "assistant",
                 riskClass = RiskClass.READ_ONLY.name,
@@ -1010,7 +1014,7 @@ fun invalidPersistedWorkflow_failsSafely() = runBlocking {
             PersistedWorkflowNode(
                 id = "n1", // duplicate node ID
                 taskId = "t2",
-                actualTaskId = "task-2",
+                actualTaskId = task2.id,
                 goal = "task two",
                 role = "assistant",
                 riskClass = RiskClass.READ_ONLY.name,
@@ -1021,7 +1025,7 @@ fun invalidPersistedWorkflow_failsSafely() = runBlocking {
     )
     storage.setString("aethra.workflows.v1", kotlinx.serialization.json.Json.encodeToString(listOf(invalidPersisted)))
 
-    // Create new engine - recovery should not crash
+    // Create new engine - recovery should reject the invalid graph
     val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
     val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
     waitForRecovery(engine2)
@@ -1029,6 +1033,254 @@ fun invalidPersistedWorkflow_failsSafely() = runBlocking {
     // Invalid workflow should not be recoverable
     val recovered = engine2.getWorkflow("invalid-workflow")
     assertNull(recovered)
+}
+
+// ------------------------------------------------------------------
+// D-2B: Recovery graph validation tests
+// ------------------------------------------------------------------
+
+@Test
+fun recoveredWorkflow_duplicateNodeIdIsRejected() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val task1 = taskEngine.create("task one")
+    val task2 = taskEngine.create("task two")
+
+    // Persist a workflow with duplicate node IDs
+    val invalidPersisted = PersistedWorkflow(
+        id = "dup-node-workflow",
+        name = "dup-node",
+        state = TaskState.QUEUED.name,
+        createdAt = System.currentTimeMillis(),
+        completedAt = null,
+        nodes = listOf(
+            PersistedWorkflowNode(
+                id = "n1", taskId = "t1", actualTaskId = task1.id,
+                goal = "task one", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = emptyList(), state = TaskState.QUEUED.name
+            ),
+            PersistedWorkflowNode(
+                id = "n1", taskId = "t2", actualTaskId = task2.id,
+                goal = "task two", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = emptyList(), state = TaskState.QUEUED.name
+            )
+        )
+    )
+    storage.setString("aethra.workflows.v1", kotlinx.serialization.json.Json.encodeToString(listOf(invalidPersisted)))
+
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    assertNull(engine2.getWorkflow("dup-node-workflow"))
+}
+
+@Test
+fun recoveredWorkflow_duplicateTaskIdIsRejected() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val task1 = taskEngine.create("task one")
+
+    // Persist a workflow where two nodes reference the same task ID
+    val invalidPersisted = PersistedWorkflow(
+        id = "dup-task-workflow",
+        name = "dup-task",
+        state = TaskState.QUEUED.name,
+        createdAt = System.currentTimeMillis(),
+        completedAt = null,
+        nodes = listOf(
+            PersistedWorkflowNode(
+                id = "n1", taskId = "t1", actualTaskId = task1.id,
+                goal = "task one", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = emptyList(), state = TaskState.QUEUED.name
+            ),
+            PersistedWorkflowNode(
+                id = "n2", taskId = "t1", actualTaskId = task1.id,
+                goal = "task two", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = emptyList(), state = TaskState.QUEUED.name
+            )
+        )
+    )
+    storage.setString("aethra.workflows.v1", kotlinx.serialization.json.Json.encodeToString(listOf(invalidPersisted)))
+
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    assertNull(engine2.getWorkflow("dup-task-workflow"))
+}
+
+@Test
+fun recoveredWorkflow_selfDependencyIsRejected() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val task1 = taskEngine.create("task one")
+
+    // Persist a workflow where a node depends on itself
+    val invalidPersisted = PersistedWorkflow(
+        id = "self-dep-workflow",
+        name = "self-dep",
+        state = TaskState.QUEUED.name,
+        createdAt = System.currentTimeMillis(),
+        completedAt = null,
+        nodes = listOf(
+            PersistedWorkflowNode(
+                id = "n1", taskId = "t1", actualTaskId = task1.id,
+                goal = "task one", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = listOf("n1"), state = TaskState.QUEUED.name
+            )
+        )
+    )
+    storage.setString("aethra.workflows.v1", kotlinx.serialization.json.Json.encodeToString(listOf(invalidPersisted)))
+
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    assertNull(engine2.getWorkflow("self-dep-workflow"))
+}
+
+@Test
+fun recoveredWorkflow_missingDependencyIsRejected() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val task1 = taskEngine.create("task one")
+
+    // Persist a workflow where a node depends on a nonexistent node
+    val invalidPersisted = PersistedWorkflow(
+        id = "missing-dep-workflow",
+        name = "missing-dep",
+        state = TaskState.QUEUED.name,
+        createdAt = System.currentTimeMillis(),
+        completedAt = null,
+        nodes = listOf(
+            PersistedWorkflowNode(
+                id = "n1", taskId = "t1", actualTaskId = task1.id,
+                goal = "task one", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = listOf("nonexistent"), state = TaskState.QUEUED.name
+            )
+        )
+    )
+    storage.setString("aethra.workflows.v1", kotlinx.serialization.json.Json.encodeToString(listOf(invalidPersisted)))
+
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    assertNull(engine2.getWorkflow("missing-dep-workflow"))
+}
+
+@Test
+fun recoveredWorkflow_directCycleIsRejected() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val task1 = taskEngine.create("task one")
+    val task2 = taskEngine.create("task two")
+
+    // Persist a workflow with a direct cycle: A -> B -> A
+    val invalidPersisted = PersistedWorkflow(
+        id = "direct-cycle-workflow",
+        name = "direct-cycle",
+        state = TaskState.QUEUED.name,
+        createdAt = System.currentTimeMillis(),
+        completedAt = null,
+        nodes = listOf(
+            PersistedWorkflowNode(
+                id = "n1", taskId = "t1", actualTaskId = task1.id,
+                goal = "task one", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = listOf("n2"), state = TaskState.QUEUED.name
+            ),
+            PersistedWorkflowNode(
+                id = "n2", taskId = "t2", actualTaskId = task2.id,
+                goal = "task two", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = listOf("n1"), state = TaskState.QUEUED.name
+            )
+        )
+    )
+    storage.setString("aethra.workflows.v1", kotlinx.serialization.json.Json.encodeToString(listOf(invalidPersisted)))
+
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    assertNull(engine2.getWorkflow("direct-cycle-workflow"))
+}
+
+@Test
+fun recoveredWorkflow_indirectCycleIsRejected() = runBlocking {
+    val storage = TestStorage()
+    val bus = EventBus()
+    val runner = TestRunner()
+    val taskEngine = TaskEngine(storage, bus, runner, maxConcurrent = 4)
+    val engine1 = WorkflowEngine(storage, bus, taskEngine, runner)
+
+    val task1 = taskEngine.create("task one")
+    val task2 = taskEngine.create("task two")
+    val task3 = taskEngine.create("task three")
+
+    // Persist a workflow with an indirect cycle: A -> B -> C -> A
+    val invalidPersisted = PersistedWorkflow(
+        id = "indirect-cycle-workflow",
+        name = "indirect-cycle",
+        state = TaskState.QUEUED.name,
+        createdAt = System.currentTimeMillis(),
+        completedAt = null,
+        nodes = listOf(
+            PersistedWorkflowNode(
+                id = "n1", taskId = "t1", actualTaskId = task1.id,
+                goal = "task one", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = listOf("n2"), state = TaskState.QUEUED.name
+            ),
+            PersistedWorkflowNode(
+                id = "n2", taskId = "t2", actualTaskId = task2.id,
+                goal = "task two", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = listOf("n3"), state = TaskState.QUEUED.name
+            ),
+            PersistedWorkflowNode(
+                id = "n3", taskId = "t3", actualTaskId = task3.id,
+                goal = "task three", role = "assistant",
+                riskClass = RiskClass.READ_ONLY.name,
+                dependsOn = listOf("n1"), state = TaskState.QUEUED.name
+            )
+        )
+    )
+    storage.setString("aethra.workflows.v1", kotlinx.serialization.json.Json.encodeToString(listOf(invalidPersisted)))
+
+    val taskEngine2 = TaskEngine(storage, EventBus(), runner, maxConcurrent = 4)
+    val engine2 = WorkflowEngine(storage, EventBus(), taskEngine2, runner)
+    waitForRecovery(engine2)
+
+    assertNull(engine2.getWorkflow("indirect-cycle-workflow"))
 }
 
 @Test

@@ -1,6 +1,8 @@
 package org.aethra.core.workflow
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.domain.TaskState
 import org.aethra.core.runtime.events.EventBus
@@ -21,6 +23,7 @@ class WorkflowEngine(
     private val lock = Any()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val workflowPersistence = WorkflowPersistence(storage)
+    private val persistenceMutex = Mutex()
 
     init {
         recoverWorkflows()
@@ -37,8 +40,44 @@ class WorkflowEngine(
      *   - direct and indirect dependency cycles are rejected
      *
      * Disconnected DAG components are allowed; they are not considered cycles.
+     *
+     * The workflow is durably persisted before this function returns.
      */
-    fun createWorkflow(name: String, nodes: List<WorkflowNode>): Workflow {
+    suspend fun createWorkflow(name: String, nodes: List<WorkflowNode>): Workflow {
+        validateWorkflowGraph(nodes)
+
+        val workflow = Workflow(name = name, nodes = nodes)
+
+        synchronized(lock) {
+            workflows[workflow.id] = workflow
+        }
+
+        // Persist durably before returning so the workflow record is guaranteed
+        // to exist in storage after this call completes.
+        persistWorkflow(workflow)
+
+        eventBus.publish(TaskEvent(
+            "workflow_created", System.currentTimeMillis(), workflow.id,
+            TaskState.QUEUED, TaskState.QUEUED,
+            mapOf("name" to name, "nodeCount" to nodes.size.toString())
+        ))
+
+        return workflow
+    }
+
+    /**
+     * Shared graph validation used by both [createWorkflow] and [reconcileWorkflow].
+     *
+     * Throws [IllegalArgumentException] for:
+     *   - duplicate node IDs
+     *   - duplicate task IDs
+     *   - self-dependencies
+     *   - missing dependency references
+     *   - direct and indirect dependency cycles
+     *
+     * Disconnected DAG components are allowed; they are not considered cycles.
+     */
+    private fun validateWorkflowGraph(nodes: List<WorkflowNode>) {
         // Validate unique node IDs
         val nodeIds = nodes.map { it.id }.toSet()
         if (nodeIds.size != nodes.size) {
@@ -67,25 +106,6 @@ class WorkflowEngine(
 
         // Detect direct and indirect cycles
         validateNoCycles(nodes)
-
-        val workflow = Workflow(name = name, nodes = nodes)
-
-        synchronized(lock) {
-            workflows[workflow.id] = workflow
-        }
-
-        // Persist the new workflow durably before returning.
-        scope.launch {
-            persistWorkflow(workflow)
-        }
-
-        eventBus.publish(TaskEvent(
-            "workflow_created", System.currentTimeMillis(), workflow.id,
-            TaskState.QUEUED, TaskState.QUEUED,
-            mapOf("name" to name, "nodeCount" to nodes.size.toString())
-        ))
-
-        return workflow
     }
 
     /**
@@ -126,7 +146,7 @@ class WorkflowEngine(
     /**
      * Return nodes in topological dependency order (dependencies before dependents).
      * Unrelated nodes retain their original relative order.
-     * Assumes the graph has already been validated as acyclic by [validateNoCycles].
+     * Assumes the graph has already been validated as acyclic by [validateWorkflowGraph].
      */
     private fun topologicalSort(nodes: List<WorkflowNode>): List<WorkflowNode> {
         val nodeMap = nodes.associate { it.id to it }
@@ -167,14 +187,14 @@ class WorkflowEngine(
      * task ID is resolved before any dependent node needs it. Declaration order of
      * nodes never affects dependency correctness.
      *
-     * The RUNNING state transition, task creation, and task-map population happen
-     * atomically under [lock], so [cancel] can never observe RUNNING with an
-     * incomplete task map. The workflow is persisted after the task map is
-     * populated so that recovery can reconstruct the mapping.
+     * The RUNNING state transition, task creation, task-map population, and durable
+     * persistence happen before tasks start running, so [cancel] can never observe
+     * RUNNING with an incomplete task map, and recovery can always reconstruct the
+     * node-to-task mapping from durable storage.
      *
      * @return true if the workflow was started, false if not found or already running.
      */
-    fun execute(workflowId: String): Boolean {
+    suspend fun execute(workflowId: String): Boolean {
         var workflow: Workflow? = null
         val nodeToTaskId = mutableMapOf<String, String>()
         synchronized(lock) {
@@ -197,13 +217,12 @@ class WorkflowEngine(
             workflowTaskIds[workflowId] = nodeToTaskId.toMap()
         }
 
-        // Persist workflow durably after the task map is populated so recovery
-        // can reconstruct the node-to-task mapping.
+        // Persist workflow durably before running tasks so recovery can
+        // reconstruct the node-to-task mapping even if the process crashes
+        // after task creation but before task execution completes.
         val workflowToPersist = workflow
-        scope.launch {
-            if (workflowToPersist != null) {
-                persistWorkflow(workflowToPersist)
-            }
+        if (workflowToPersist != null) {
+            persistWorkflow(workflowToPersist)
         }
 
         eventBus.publish(TaskEvent(
@@ -242,9 +261,11 @@ class WorkflowEngine(
      * Cancellation is idempotent: cancelling an already-terminal workflow
      * returns false and has no effect.
      *
+     * The CANCELLED state is durably persisted before this function returns.
+     *
      * @return true if the workflow was cancelled, false if not found or already terminal.
      */
-    fun cancel(workflowId: String): Boolean {
+    suspend fun cancel(workflowId: String): Boolean {
         synchronized(lock) {
             val workflow = workflows[workflowId] ?: return false
             if (workflow.state in setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)) return false
@@ -261,12 +282,10 @@ class WorkflowEngine(
             }
         }
 
-        // Persist the cancellation durably.
+        // Persist the cancellation durably before returning.
         val cancelledWorkflow = synchronized(lock) { workflows[workflowId] }
         if (cancelledWorkflow != null) {
-            scope.launch {
-                persistWorkflow(cancelledWorkflow)
-            }
+            persistWorkflow(cancelledWorkflow)
         }
 
         eventBus.publish(TaskEvent(
@@ -283,26 +302,27 @@ class WorkflowEngine(
      *
      * A cancelled workflow never transitions to COMPLETED or FAILED: the
      * monitor returns early when workflow.state is no longer RUNNING.
+     *
+     * Terminal state transitions are durably persisted before the corresponding
+     * event is published, so a crash after the event cannot leave the durable
+     * state behind the logical state.
      */
     private suspend fun monitorWorkflow(workflowId: String) {
         while (true) {
             delay(200)
-            synchronized(lock) {
+            val result = synchronized(lock) {
                 val workflow = workflows[workflowId] ?: return
                 if (workflow.state != TaskState.RUNNING) return
                 val nodes = workflow.nodes
                 val taskIdMap = workflowTaskIds[workflowId]
                 if (taskIdMap == null) return
 
-                // Check terminal states for all tasks
                 val allTerminal = nodes.all { node ->
                     val taskId = taskIdMap[node.id]
                     val task = taskId?.let { taskEngine.getTask(it) }
                     task?.state in setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)
                 }
 
-                // Check if any non-terminal task has a failed dependency —
-                // such a task can never complete, so the workflow fails.
                 val hasFailedDependency = nodes.any { node ->
                     val taskId = taskIdMap[node.id]
                     val task = taskId?.let { taskEngine.getTask(it) }
@@ -317,7 +337,9 @@ class WorkflowEngine(
                     }
                 }
 
-                if (allTerminal || hasFailedDependency) {
+                if (!allTerminal && !hasFailedDependency) {
+                    null  // Continue monitoring
+                } else {
                     val hasFailed = nodes.any { node ->
                         val taskId = taskIdMap[node.id]
                         val task = taskId?.let { taskEngine.getTask(it) }
@@ -327,23 +349,26 @@ class WorkflowEngine(
                     workflow.state = newState
                     workflow.completedAt = System.currentTimeMillis()
 
-                    // Persist the terminal state durably before publishing.
-                    val wfToPersist = workflow
-                    scope.launch {
-                        persistWorkflow(wfToPersist)
-                    }
-
-                    eventBus.publish(TaskEvent(
-                        "workflow_${newState.name.lowercase()}",
-                        System.currentTimeMillis(),
-                        workflowId,
-                        TaskState.RUNNING,
-                        newState,
-                        mapOf("nodeCount" to nodes.size.toString())
-                    ))
-                    return
+                    PersistData(workflow, toPersisted(workflow))
                 }
             }
+
+            if (result == null) continue  // Continue monitoring
+
+            // Persist outside lock (no suspension points inside synchronized block)
+            workflowPersistence.saveAll(
+                workflowPersistence.loadAll().filter { it.id != result.workflow.id } + result.persisted
+            )
+
+            eventBus.publish(TaskEvent(
+                "workflow_${result.workflow.state.name.lowercase()}",
+                System.currentTimeMillis(),
+                workflowId,
+                TaskState.RUNNING,
+                result.workflow.state,
+                mapOf("nodeCount" to result.workflow.nodes.size.toString())
+            ))
+            return
         }
     }
 
@@ -357,12 +382,15 @@ class WorkflowEngine(
      * Launches a coroutine that:
      * 1. Loads persisted workflows from storage
      * 2. Waits for TaskEngine to have loaded its tasks (async restoration)
-     * 3. Reconciles each workflow with current task states
+     * 3. Validates and reconciles each workflow with current task states
      * 4. Stores recovered workflows in memory
      * 5. Starts monitoring for non-terminal workflows
      *
      * Recovery is idempotent: calling it multiple times does not duplicate
      * workflows, tasks, or monitors.
+     *
+     * Invalid persisted workflows (e.g., duplicate node IDs, cycles, missing
+     * task references) are rejected during recovery and never enter memory.
      */
     private fun recoverWorkflows() {
         scope.launch {
@@ -427,7 +455,7 @@ class WorkflowEngine(
      * TaskEngine will re-schedule them.
      *
      * Returns null if recovery cannot proceed safely (e.g., a referenced task
-     * is missing from TaskEngine).
+     * is missing from TaskEngine, or the persisted graph is invalid).
      */
     private fun reconcileWorkflow(persisted: PersistedWorkflow): Workflow? {
         // Build node ID → task ID mapping from persisted data.
@@ -460,6 +488,10 @@ class WorkflowEngine(
                 state = TaskState.valueOf(node.state)
             )
         }
+
+        // Apply the same graph validation as createWorkflow() to reject
+        // invalid persisted data (duplicate IDs, cycles, missing deps, etc.).
+        validateWorkflowGraph(nodes)
 
         val workflow = Workflow(
             id = persisted.id,
@@ -569,11 +601,22 @@ class WorkflowEngine(
     /**
      * Persist a single workflow durably. Loads existing workflows from
      * storage, replaces or adds the given workflow, and saves all.
+     *
+     * All persistence operations are serialized by [persistenceMutex] to
+     * prevent older asynchronous writes from overwriting newer workflow state.
      */
-    private suspend fun persistWorkflow(workflow: Workflow) {
-        val persisted = toPersisted(workflow)
+    private suspend fun persistWorkflow(workflow: Workflow) = persistenceMutex.withLock {
+        val persisted = synchronized(lock) {
+            toPersisted(workflow)
+        }
         val existing = workflowPersistence.loadAll()
         val updated = existing.filter { it.id != workflow.id } + persisted
         workflowPersistence.saveAll(updated)
     }
+
+    /**
+     * Data class for passing workflow and its persisted form between
+     * synchronized(lock) blocks and suspension points.
+     */
+    private data class PersistData(val workflow: Workflow, val persisted: PersistedWorkflow)
 }
