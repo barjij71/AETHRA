@@ -1,4 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AETHRA</string>
+
+    <!-- Home screen -->
+    <string name="home_title">AETHRA Runtime</string>
+    <string name="running_yes">YES</string>
+    <string name="running_no">NO</string>
+    <string name="active_tasks">Active: %1$d</string>
+    <string name="queued_tasks">Queued: %1$d</string>
+    <string name="settings_button">Settings</string>
+    <string name="command_placeholder">Type a command, e.g. device.info</string>
+    <string name="run_button">Run</string>
+    <string name="tasks_section">Tasks</string>
+    <string name="no_tasks">No tasks yet.</string>
+    <string name="events_section">Events</string>
+    <string name="no_events">No events yet.</string>
+    <string name="skills_section">Skills</string>
+    <string name="no_skills">No skills yet.</string>
+    <string name="memory_section">Memory</string>
+    <string name="no_memory">No memories yet.</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_voice">Voice</string>
+    <string name="nav_device">Device</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_visual_effects">Visual Effects</string>
+    <string name="settings_power_saving">Power Saving Mode</string>
+    <string name="settings_voice_ui">Voice UI Preferences</string>
+    <string name="setting_enabled">Enabled</string>
+    <string name="setting_disabled">Disabled</string>
+
+    <!-- Voice shell (not yet implemented) -->
+    <string name="voice_title">Voice</string>
+    <string name="voice_not_implemented">Voice input is not yet implemented.</string>
+    <string name="voice_coming_soon">STT, TTS, and wake phrase support coming in a future phase.</string>
+
+    <!-- Device shell (not yet implemented) -->
+    <string name="device_title">Device</string>
+    <string name="device_not_implemented">Device control is not yet implemented.</string>
+    <string name="device_coming_soon">Phone and device adapters coming in a future phase.</string>
 </resources>

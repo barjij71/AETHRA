@@ -1,12 +1,14 @@
 package org.aethra.assistant
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -14,17 +16,18 @@ import org.aethra.core.domain.DomainEvent
 import org.aethra.core.domain.MemoryEntry
 import org.aethra.core.skills.Skill
 import org.aethra.core.task.Task
-import org.aethra.assistant.aethra.adapters.InstaBoxSettingsScreen
 import org.aethra.assistant.aethra.runtime.Runtime
 
 @Composable
-fun AthraHomePage(runtime: Runtime) {
+fun AthraHomePage(
+    runtime: Runtime,
+    onNavigateToSettings: () -> Unit = {}
+) {
     var commandText by remember { mutableStateOf("") }
     var tasks by remember { mutableStateOf<List<Task>>(emptyList()) }
     var events by remember { mutableStateOf<List<DomainEvent>>(emptyList()) }
     var skills by remember { mutableStateOf<List<Skill>>(emptyList()) }
     var memories by remember { mutableStateOf<List<MemoryEntry>>(emptyList()) }
-    var showSettings by remember { mutableStateOf(false) }
 
     val taskEngine = remember(runtime) { runtime.taskEngine }
     val skillRegistryAndroid = remember(runtime) { runtime.skillRegistryAndroid }
@@ -49,17 +52,18 @@ fun AthraHomePage(runtime: Runtime) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "AETHRA Runtime",
+                text = stringResource(id = R.string.home_title),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                "Running: " + if (runtime.isRunning) "YES" else "NO" +
-                    "  •  Active: " + (runtime.taskEngine?.activeCount ?: 0) +
-                    "  •  Queued: " + (runtime.taskEngine?.queuedCount ?: 0)
+                text = "  •  " +
+                    stringResource(id = R.string.active_tasks, runtime.taskEngine?.activeCount ?: 0) +
+                    "  •  " +
+                    stringResource(id = R.string.queued_tasks, runtime.taskEngine?.queuedCount ?: 0)
             )
-            Button(onClick = { showSettings = true }) {
-                Text("Settings")
+            Button(onClick = onNavigateToSettings) {
+                Text(text = stringResource(id = R.string.settings_button))
             }
         }
 
@@ -71,7 +75,7 @@ fun AthraHomePage(runtime: Runtime) {
                 value = commandText,
                 onValueChange = { commandText = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Type a command, e.g. device.info") }
+                placeholder = { Text(stringResource(id = R.string.command_placeholder)) }
             )
             Button(onClick = {
                 val goal = commandText.trim()
@@ -82,12 +86,12 @@ fun AthraHomePage(runtime: Runtime) {
                     }
                     commandText = ""
                 }
-            }) { Text("Run") }
+            }) { Text(text = stringResource(id = R.string.run_button)) }
         }
 
-        Text("Tasks", style = MaterialTheme.typography.labelMedium)
+        Text(text = stringResource(id = R.string.tasks_section), style = MaterialTheme.typography.labelMedium)
         if (tasks.isEmpty()) {
-            Text("No tasks yet.", style = MaterialTheme.typography.bodySmall)
+            Text(text = stringResource(id = R.string.no_tasks), style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn {
                 items(tasks) { t ->
@@ -102,9 +106,9 @@ fun AthraHomePage(runtime: Runtime) {
             }
         }
 
-        Text("Events", style = MaterialTheme.typography.labelMedium)
+        Text(text = stringResource(id = R.string.events_section), style = MaterialTheme.typography.labelMedium)
         if (events.isEmpty()) {
-            Text("No events yet.", style = MaterialTheme.typography.bodySmall)
+            Text(text = stringResource(id = R.string.no_events), style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn {
                 items(events) { e ->
@@ -113,9 +117,9 @@ fun AthraHomePage(runtime: Runtime) {
             }
         }
 
-        Text("Skills", style = MaterialTheme.typography.labelMedium)
+        Text(text = stringResource(id = R.string.skills_section), style = MaterialTheme.typography.labelMedium)
         if (skills.isEmpty()) {
-            Text("No skills yet.", style = MaterialTheme.typography.bodySmall)
+            Text(text = stringResource(id = R.string.no_skills), style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn {
                 items(skills) { s ->
@@ -124,9 +128,9 @@ fun AthraHomePage(runtime: Runtime) {
             }
         }
 
-        Text("Memory", style = MaterialTheme.typography.labelMedium)
+        Text(text = stringResource(id = R.string.memory_section), style = MaterialTheme.typography.labelMedium)
         if (memories.isEmpty()) {
-            Text("No memories yet.", style = MaterialTheme.typography.bodySmall)
+            Text(text = stringResource(id = R.string.no_memory), style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn {
                 items(memories) { m -> Text(m.category.toString() + "  " + m.text) }
@@ -134,12 +138,5 @@ fun AthraHomePage(runtime: Runtime) {
         }
     }
 
-    runtime.platformAdapters?.let { adapters ->
-        if (showSettings) {
-            InstaBoxSettingsScreen(
-                adapters = adapters,
-                onClose = { showSettings = false }
-            )
-        }
-    }
-}
+private fun stringResource(id: Int): String = androidx.compose.ui.res.stringResource(id = id)
+
