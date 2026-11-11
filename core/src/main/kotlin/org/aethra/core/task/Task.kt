@@ -1,7 +1,6 @@
 package org.aethra.core.task
 
 import org.aethra.core.domain.RiskClass
-import org.aethra.core.domain.Task
 import org.aethra.core.domain.TaskState
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean

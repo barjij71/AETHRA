@@ -105,12 +105,3 @@ class PermissionBroker(private val auditLog: AuditLog) {
         }
     }
 }
-
-/**
- * Risk classification levels, ordered lowest to highest. Used by the
- * PermissionBroker and by the execution policy.
- */
-enum class RiskClass {
-    READ_ONLY, REVERSIBLE, SENSITIVE, DESTRUCTIVE;
-    val level: Int get() = this.ordinal
-}

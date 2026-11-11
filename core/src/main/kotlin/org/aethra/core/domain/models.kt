@@ -100,22 +100,6 @@ data class Agent(
     var updatedAt: Long = createdAt
 )
 
-data class Skill(
-    val id: String,
-    val name: String,
-    val version: String = "1.0.0",
-    val source: String = "local",
-
-    var enabled: Boolean = true,
-
-    var requestedPermissions: List<String> = emptyList(),
-
-    var dependencies: List<String> = emptyList(),
-    val createdAt: Long = System.currentTimeMillis(),
-
-    var updatedAt: Long = createdAt
-)
-
 @Serializable
 data class AuditEntry(
     val id: String,
