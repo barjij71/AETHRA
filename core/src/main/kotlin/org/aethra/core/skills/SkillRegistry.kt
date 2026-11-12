@@ -18,7 +18,9 @@ class SkillRegistry {
         require(trustState != TrustState.TRUSTED || manifest.trusted) {
             "trusted registry state requires manifest.trusted=true"
         }
-        entries[manifest.id] = RegisteredSkill(manifest, trustState)
+        // A manifest is untrusted input: its enabled flag is never an authorization.
+        // Activation must happen through enable() after Core has established trust.
+        entries[manifest.id] = RegisteredSkill(manifest.copy(enabled = false), trustState)
     }
 
     @Synchronized fun get(id: String): RegisteredSkill? = entries[id]
@@ -27,7 +29,9 @@ class SkillRegistry {
     @Synchronized
     fun enable(id: String): Boolean {
         val current = entries[id] ?: return false
-        require(current.trustState == TrustState.TRUSTED) { "skill must be trusted before enable" }
+        require(current.trustState == TrustState.TRUSTED && current.manifest.trusted) {
+            "skill must be trusted before enable"
+        }
         entries[id] = current.copy(manifest = current.manifest.copy(enabled = true))
         return true
     }
@@ -43,7 +47,12 @@ class SkillRegistry {
     fun setTrust(id: String, trustState: TrustState): Boolean {
         val current = entries[id] ?: return false
         if (trustState == TrustState.TRUSTED) require(current.manifest.trusted) { "manifest is not trusted" }
-        entries[id] = current.copy(trustState = trustState)
+        val manifest = if (trustState == TrustState.TRUSTED) {
+            current.manifest
+        } else {
+            current.manifest.copy(enabled = false)
+        }
+        entries[id] = current.copy(manifest = manifest, trustState = trustState)
         return true
     }
 }

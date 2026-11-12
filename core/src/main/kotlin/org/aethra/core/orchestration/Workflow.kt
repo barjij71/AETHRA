@@ -2,6 +2,7 @@ package org.aethra.core.orchestration
 
 import org.aethra.core.policy.RiskTier
 import org.aethra.core.skills.SkillRegistry
+import org.aethra.core.skills.TrustState
 
 data class WorkflowStep(
     val id: String,
@@ -26,7 +27,14 @@ class WorkflowValidator(private val registry: SkillRegistry) {
         if (ids.size != ids.toSet().size) errors += "duplicate step id"
         val stepIds = ids.toSet()
         workflow.steps.forEach { step ->
-            if (registry.get(step.skillId)?.manifest?.enabled != true) errors += "skill " + step.skillId + " is not enabled"
+            val registered = registry.get(step.skillId)
+            if (
+                registered?.trustState != TrustState.TRUSTED ||
+                registered.manifest.trusted != true ||
+                registered.manifest.enabled != true
+            ) {
+                errors += "skill " + step.skillId + " is not trusted and enabled"
+            }
             if (step.dependsOn.any { it !in stepIds }) errors += "step " + step.id + " has missing dependency"
             if (step.dependsOn.contains(step.id)) errors += "step " + step.id + " depends on itself"
             if (step.inputArtifactIds.any { it.isBlank() }) errors += "step " + step.id + " has blank artifact reference"
