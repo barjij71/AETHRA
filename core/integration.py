@@ -48,7 +48,7 @@ class AETHRAIntegration:
         self.file_executor = FileExecutor()
 
         # hermes_api Ø³ÙŠØªÙ… ØªÙ‡ÙŠØ¦ØªÙ‡ Ø¨Ø¹Ø¯ ØªØ¹Ø±ÙŠÙ aethra ÙÙŠ Ù†Ù‡Ø§ÙŠØ© Ø§Ù„Ù…Ù„Ù
-        self.hermes_api = None
+        self._hermes_api = None
         self.tool_dispatcher = ToolDispatcher(
             tool_registry=self.tool_registry,
             permission_broker=self.permission_broker,
@@ -107,7 +107,24 @@ class AETHRAIntegration:
         core_registry.register("tool_dispatcher", self.tool_dispatcher)
         core_registry.register("task_runner", self.task_runner)
         core_registry.register("permission_broker", self.permission_broker)
-        core_registry.register("hermes_api", self.hermes_api)
+
+    @property
+    def hermes_api(self):
+        """Lazily load the optional Hermes adapter only when the web/chat layer asks for it."""
+        if self._hermes_api is None:
+            try:
+                from ui.hermes_api import HermesAPI
+            except ImportError:
+                return None
+            self._hermes_api = HermesAPI(
+                task_engine=self.task_engine,
+                memory_engine=self.memory_engine,
+                verification_engine=self.verification_engine,
+                permission_broker=self.permission_broker,
+                tool_registry=self.tool_registry,
+                tool_dispatcher=self.tool_dispatcher,
+            )
+        return self._hermes_api
 
     def start(self) -> None:
         core_runtime.start()
@@ -119,16 +136,7 @@ class AETHRAIntegration:
 aethra = AETHRAIntegration()
 
 # ØªÙ‡ÙŠØ¦Ø© hermes_api Ø¨Ø¹Ø¯ ØªØ¹Ø±ÙŠÙ aethra Ù„ØªØ¬Ù†Ø¨ Ø§Ù„Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø§Ù„Ø¯ÙˆØ±ÙŠ
-from ui.hermes_api import HermesAPI
 from devices.notification import notification_manager
-aethra.hermes_api = HermesAPI(
-    task_engine=aethra.task_engine,
-    memory_engine=aethra.memory_engine,
-    verification_engine=aethra.verification_engine,
-    permission_broker=aethra.permission_broker,
-    tool_registry=aethra.tool_registry,
-    tool_dispatcher=aethra.tool_dispatcher,
-)
 
 aethra.notification_manager = notification_manager
 core_registry.register("notification_manager", notification_manager)
