@@ -29,15 +29,17 @@ class WorkflowValidator(private val registry: SkillRegistry) {
         workflow.steps.forEach { step ->
             val registered = registry.get(step.skillId)
             if (
-                registered?.trustState != TrustState.TRUSTED ||
-                registered.manifest.trusted != true ||
-                registered.manifest.enabled != true
+                registered == null ||
+                registered.trustState != TrustState.TRUSTED ||
+                !registered.manifest.trusted ||
+                !registered.manifest.enabled
             ) {
                 errors += "skill " + step.skillId + " is not trusted and enabled"
             }
             if (step.dependsOn.any { it !in stepIds }) errors += "step " + step.id + " has missing dependency"
             if (step.dependsOn.contains(step.id)) errors += "step " + step.id + " depends on itself"
             if (step.inputArtifactIds.any { it.isBlank() }) errors += "step " + step.id + " has blank artifact reference"
+            if (step.riskTier == RiskTier.TIER_3) errors += "step " + step.id + " uses tier 3 action denied by default"
             if (step.riskTier >= RiskTier.TIER_2 && step.approvalId == null) errors += "step " + step.id + " requires explicit approval"
             if (step.riskTier >= RiskTier.TIER_2 && step.approvalTarget.isBlank()) errors += "step " + step.id + " requires approval target"
             if (step.riskTier >= RiskTier.TIER_2 && step.approvalPayload.isBlank()) errors += "step " + step.id + " requires approval payload"

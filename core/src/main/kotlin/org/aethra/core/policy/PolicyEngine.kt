@@ -27,7 +27,8 @@ class CorePolicyEngine : PolicyEngine {
 
     @Synchronized
     override fun requestApproval(actor: String, action: String, target: String, normalizedPayload: String, risk: RiskTier): Approval? {
-        if (risk < RiskTier.TIER_2) return null
+        // Tier 3 remains deny-by-default until a separate high-assurance path exists.
+        if (risk != RiskTier.TIER_2) return null
         val approval = Approval(java.util.UUID.randomUUID().toString(), actor, action, target, normalizedPayload, System.currentTimeMillis() + 300_000)
         approvals[approval.id] = approval
         return approval
