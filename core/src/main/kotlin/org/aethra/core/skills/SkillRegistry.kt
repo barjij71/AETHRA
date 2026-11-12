@@ -12,15 +12,15 @@ class SkillRegistry {
     private val entries = LinkedHashMap<String, RegisteredSkill>()
 
     @Synchronized
-    fun register(manifest: SkillManifest, trustState: TrustState = TrustState.UNTRUSTED) {
+    fun register(manifest: SkillManifest) {
         val validation = SkillManifestValidator.validate(manifest)
         require(validation.valid) { validation.errors.joinToString("; ") }
-        require(trustState != TrustState.TRUSTED || manifest.trusted) {
-            "trusted registry state requires manifest.trusted=true"
-        }
-        // A manifest is untrusted input: its enabled flag is never an authorization.
-        // Activation must happen through enable() after Core has established trust.
-        entries[manifest.id] = RegisteredSkill(manifest.copy(enabled = false), trustState)
+        // Imported manifest fields are claims, not Core authorization decisions.
+        // Every registration starts untrusted and disabled.
+        entries[manifest.id] = RegisteredSkill(
+            manifest.copy(enabled = false),
+            TrustState.UNTRUSTED
+        )
     }
 
     @Synchronized fun get(id: String): RegisteredSkill? = entries[id]
@@ -43,8 +43,12 @@ class SkillRegistry {
         return true
     }
 
+    /**
+     * Trust transitions are a Core-internal operation. External importers and skills
+     * may register candidates, but cannot promote or re-enable them.
+     */
     @Synchronized
-    fun setTrust(id: String, trustState: TrustState): Boolean {
+    internal fun setTrust(id: String, trustState: TrustState): Boolean {
         val current = entries[id] ?: return false
         if (trustState == TrustState.TRUSTED) require(current.manifest.trusted) { "manifest is not trusted" }
         val manifest = if (trustState == TrustState.TRUSTED) {

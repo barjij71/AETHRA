@@ -8,6 +8,7 @@ import org.aethra.core.skills.SkillRegistry
 import org.aethra.core.skills.TrustState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -32,6 +33,7 @@ class SkillRegistryTrustBoundaryTest {
         val registered = registry.get("candidate")
         assertEquals(TrustState.UNTRUSTED, registered?.trustState)
         assertFalse(registered?.manifest?.enabled ?: true)
+        assertFailsWith<IllegalArgumentException> { registry.enable("candidate") }
         assertTrue(
             WorkflowValidator(registry).validate(
                 Workflow("wf-untrusted", listOf(WorkflowStep("step", "candidate")))
@@ -42,7 +44,8 @@ class SkillRegistryTrustBoundaryTest {
     @Test
     fun revokingTrustImmediatelyDisablesSkillAndBlocksWorkflow() {
         val registry = SkillRegistry()
-        registry.register(manifest(trusted = true, enabled = true), TrustState.TRUSTED)
+        registry.register(manifest(trusted = true, enabled = true))
+        assertTrue(registry.setTrust("candidate", TrustState.TRUSTED))
         assertTrue(registry.enable("candidate"))
         assertTrue(registry.get("candidate")?.manifest?.enabled == true)
 
@@ -56,10 +59,15 @@ class SkillRegistryTrustBoundaryTest {
     }
 
     @Test
-    fun registryRequiresExplicitEnableAfterTrustIsGranted() {
+    fun manifestTrustClaimDoesNotReplaceCoreTrustDecisionOrExplicitEnable() {
         val registry = SkillRegistry()
-        registry.register(manifest(trusted = true, enabled = true), TrustState.TRUSTED)
+        registry.register(manifest(trusted = true, enabled = true))
 
+        assertEquals(TrustState.UNTRUSTED, registry.get("candidate")?.trustState)
+        assertFalse(registry.get("candidate")?.manifest?.enabled ?: true)
+        assertFailsWith<IllegalArgumentException> { registry.enable("candidate") }
+
+        assertTrue(registry.setTrust("candidate", TrustState.TRUSTED))
         assertFalse(registry.get("candidate")?.manifest?.enabled ?: true)
         assertTrue(registry.enable("candidate"))
         assertEquals(TrustState.TRUSTED, registry.get("candidate")?.trustState)
