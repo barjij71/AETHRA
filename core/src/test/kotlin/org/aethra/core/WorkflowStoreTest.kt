@@ -48,7 +48,7 @@ class WorkflowStoreTest {
             assertEquals(StepResult.Status.RUNNING, loaded.steps["a"]?.status)
             assertEquals("task-restart::a", loaded.steps["a"]?.idempotencyKey)
         } finally {
-            kotlin.io.path.deleteIfExists(file)
+            java.nio.file.Files.deleteIfExists(file)
         }
     }
 
@@ -81,7 +81,7 @@ class WorkflowStoreTest {
             assertEquals("skill-a", loaded.audit.single().skillId)
             assertEquals("artifact-1", loaded.audit.single().artifactIds.single())
         } finally {
-            kotlin.io.path.deleteIfExists(file)
+            java.nio.file.Files.deleteIfExists(file)
         }
     }
 
@@ -120,7 +120,7 @@ class WorkflowStoreTest {
             assertEquals(StepResult.Status.UNKNOWN_OUTCOME, result["once-step"]?.status)
             assertEquals(false, executed)
         } finally {
-            kotlin.io.path.deleteIfExists(file)
+            java.nio.file.Files.deleteIfExists(file)
         }
     }
 }
