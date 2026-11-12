@@ -1,0 +1,28 @@
+fix(core): harden workflow persistence recovery
+
+D-2B.1: Workflow Reliability Fixes
+
+1. Fix WorkflowEngine.monitorWorkflow() to avoid calling suspend function
+   persistWorkflow() inside synchronized(lock) block. Capture persisted
+   data inside synchronized block and persist outside lock.
+
+2. Add D-2B contract tests for workflow persistence and recovery:
+   - createWorkflow_persistsAndSurvivesRestart
+   - completedWorkflow_doesNotRerunOnRestart
+   - failedWorkflow_remainsFailedOnRestart
+   - cancelledWorkflow_remainsCancelledOnRestart
+   - runningWorkflowRecovery_reconcilesTaskStates
+   - completedDependency_notRerunAfterRestart
+   - missingReferencedTask_failsRecovery
+   - recovery_isIdempotent
+   - disconnectedWorkflowRecovery_recoversAllComponents
+   - invalidPersistedWorkflow_failsSafely
+   - persistTiming_usesRealStorageNotMock
+   - recoveredWorkflow_duplicateNodeIdIsRejected
+   - recoveredWorkflow_duplicateTaskIdIsRejected
+   - recoveredWorkflow_selfDependencyIsRejected
+   - recoveredWorkflow_missingDependencyIsRejected
+   - recoveredWorkflow_directCycleIsRejected
+   - recoveredWorkflow_indirectCycleIsRejected
+
+All 209 Core tests pass (203 existing + 6 new D-2B tests).

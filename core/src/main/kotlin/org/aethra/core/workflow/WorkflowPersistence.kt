@@ -55,6 +55,7 @@ data class PersistedWorkflow(
     val state: String,
     val createdAt: Long,
     val completedAt: Long?,
+    val executionAttemptId: String? = null,
     val nodes: List<PersistedWorkflowNode>
 )
 

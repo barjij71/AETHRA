@@ -11,9 +11,10 @@ class Task(
     role: String = "assistant",
     riskClass: RiskClass = RiskClass.READ_ONLY,
     dependsOn: List<String> = emptyList(),
+    id: String? = null,
     var onCompleted: (Task) -> Unit = {}
 ) {
-    var id: String = UUID.randomUUID().toString()
+    var id: String = id ?: UUID.randomUUID().toString()
         private set
     var goal: String = goal
         private set

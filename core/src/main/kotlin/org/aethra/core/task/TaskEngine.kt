@@ -36,6 +36,10 @@ class TaskEngine(
     private val dependents = HashMap<String, MutableList<String>>()
     private val persistence = TaskPersistence(storage)
     private val restored = CompletableDeferred<Unit>()
+
+    internal suspend fun awaitRestored() {
+        restored.await()
+    }
     private val persistenceMutex = Mutex()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -76,17 +80,25 @@ class TaskEngine(
         goal: String,
         role: String = "assistant",
         riskClass: RiskClass = RiskClass.READ_ONLY,
-        dependsOn: List<String> = emptyList()
+        dependsOn: List<String> = emptyList(),
+        taskId: String? = null
     ): Task {
-        val task = Task(goal, role, riskClass, dependsOn)
+        val canonicalId = taskId ?: UUID.randomUUID().toString()
+        var task: Task
         synchronized(lock) {
+            // Idempotent create-or-reuse: if task with canonical ID already exists, return it
+            val existing = tasks[canonicalId]
+            if (existing != null) return existing
+
             require(dependsOn.all { tasks.containsKey(it) }) {
                 "Task dependency not found"
             }
-            require(!TaskScheduler.wouldCreateCycle(task.id, dependsOn) { tasks[it] }) {
+            require(!TaskScheduler.wouldCreateCycle(canonicalId, dependsOn) { tasks[it] }) {
                 "Task dependency cycle detected"
             }
-            tasks[task.id] = task
+
+            task = Task(goal, role, riskClass, dependsOn, id = canonicalId)
+            tasks[canonicalId] = task
         }
         persist()
         registerDependents(task)

@@ -144,27 +144,47 @@ class WorkflowEngine(
     }
 
     suspend fun execute(workflowId: String): Boolean {
+        awaitRecovery()
         var workflow: Workflow? = null
         val nodeToTaskId = mutableMapOf<String, String>()
+        var orderedNodes: List<WorkflowNode> = emptyList()
         synchronized(lock) {
             workflow = workflows[workflowId] ?: return false
             if (workflow.state != TaskState.QUEUED) return false
-            workflow.state = TaskState.RUNNING
+            orderedNodes = topologicalSort(workflow.nodes)
+        }
 
-            for (node in topologicalSort(workflow.nodes)) {
-                val task = taskEngine.create(
-                    goal = node.goal,
-                    role = node.role,
-                    riskClass = node.riskClass,
-                    dependsOn = node.dependsOn.mapNotNull { depId -> nodeToTaskId[depId] }
-                )
-                nodeToTaskId[node.id] = task.id
+        // Durable execution intent before any task creation.
+        // Persist as QUEUED with executionAttemptId so recovery knows
+        // an execution was attempted even if tasks are not yet created.
+        val executionAttemptId = "exec-$workflowId"
+        persistWorkflow(workflow!!, executionAttemptId, emptyMap())
+
+        // Create tasks outside the lock. Canonical IDs are derived from
+        // workflowId + nodeId so they can be reconstructed after crash.
+        for (node in orderedNodes) {
+            val canonicalId = "$workflowId#${node.id}"
+            val depTaskIds = node.dependsOn.mapNotNull { depId ->
+                nodeToTaskId[depId]
             }
+            val task = taskEngine.create(
+                goal = node.goal,
+                role = node.role,
+                riskClass = node.riskClass,
+                dependsOn = depTaskIds,
+                taskId = canonicalId
+            )
+            nodeToTaskId[node.id] = task.id
+        }
+
+        // Record RUNNING state and task mapping durably.
+        synchronized(lock) {
+            workflow!!.state = TaskState.RUNNING
             workflowTaskIds[workflowId] = nodeToTaskId.toMap()
         }
 
         val workflowToPersist = workflow!!
-        persistWorkflow(workflowToPersist)
+        persistWorkflow(workflowToPersist, executionAttemptId, nodeToTaskId)
 
         eventBus.publish(TaskEvent(
             "workflow_started", System.currentTimeMillis(), workflowId,
@@ -201,8 +221,9 @@ class WorkflowEngine(
         }
 
         val taskIdMap = synchronized(lock) { workflowTaskIds[workflowId] }
-        if (taskIdMap != null) {
-            for (node in workflows[workflowId]!!.nodes) {
+        val cancelWorkflow = synchronized(lock) { workflows[workflowId] }
+        if (taskIdMap != null && cancelWorkflow != null) {
+            for (node in cancelWorkflow.nodes) {
                 val taskId = taskIdMap[node.id]
                 if (taskId != null) {
                     taskEngine.cancel(taskId)
@@ -226,7 +247,7 @@ class WorkflowEngine(
     private suspend fun monitorWorkflow(workflowId: String) {
         while (true) {
             delay(200)
-            val result = synchronized(lock) {
+            val workflowToPersist: Workflow? = synchronized(lock) {
                 val workflow = workflows[workflowId] ?: return
                 if (workflow.state != TaskState.RUNNING) return
                 val nodes = workflow.nodes
@@ -254,32 +275,32 @@ class WorkflowEngine(
                 }
 
                 if (!allTerminal && !hasFailedDependency) {
-                    return
-                }
+                    null  // Not terminal yet — keep monitoring on next iteration
+                } else {
+                    val hasFailed = nodes.any { node ->
+                        val taskId = taskIdMap[node.id]
+                        val task = taskId?.let { taskEngine.getTask(it) }
+                        task?.state == TaskState.FAILED || task?.state == TaskState.ERROR
+                    }
+                    val newState = if (hasFailed || hasFailedDependency) TaskState.FAILED else TaskState.COMPLETED
+                    workflow.state = newState
+                    workflow.completedAt = System.currentTimeMillis()
 
-                val hasFailed = nodes.any { node ->
-                    val taskId = taskIdMap[node.id]
-                    val task = taskId?.let { taskEngine.getTask(it) }
-                    task?.state == TaskState.FAILED || task?.state == TaskState.ERROR
+                    workflow
                 }
-                val newState = if (hasFailed || hasFailedDependency) TaskState.FAILED else TaskState.COMPLETED
-                workflow.state = newState
-                workflow.completedAt = System.currentTimeMillis()
-
-                PersistData(workflow, toPersisted(workflow), newState)
             }
 
-            if (result == null) continue
+            if (workflowToPersist == null) continue
 
-            persistWorkflow(result.workflow)
+            persistWorkflow(workflowToPersist)
 
             eventBus.publish(TaskEvent(
-                "workflow_${result.workflow.state.name.lowercase()}",
+                "workflow_${workflowToPersist.state.name.lowercase()}",
                 System.currentTimeMillis(),
                 workflowId,
                 TaskState.RUNNING,
-                result.newState,
-                mapOf("nodeCount" to result.workflow.nodes.size.toString())
+                workflowToPersist.state,
+                mapOf("nodeCount" to workflowToPersist.nodes.size.toString())
             ))
             return
         }
@@ -288,66 +309,50 @@ class WorkflowEngine(
     private fun recoverWorkflows() {
         scope.launch {
             try {
+                // Ensure TaskEngine has finished loading persisted tasks before reconciling.
+                taskEngine.awaitRestored()
+
                 val persistedWorkflows = workflowPersistence.loadAll()
 
-                if (persistedWorkflows.isEmpty()) return@launch
-
-                val allTaskIds = persistedWorkflows
-                    .flatMap { it.nodes }
-                    .mapNotNull { it.actualTaskId }
-                    .toSet()
-
-                val waitStart = System.currentTimeMillis()
-                while (System.currentTimeMillis() - waitStart < 10000) {
-                    val allLoaded = allTaskIds.all { taskId ->
-                        taskEngine.getTask(taskId) != null
-                    }
-                    if (allLoaded) break
-                    delay(50)
+                if (persistedWorkflows.isEmpty()) {
+                    recoveryDeferred.complete(Unit)
+                    return@launch
                 }
 
                 for (persisted in persistedWorkflows) {
                     val workflow = reconcileWorkflow(persisted)
                     if (workflow == null) continue
+
+                    // Build resolved task ID map using canonical IDs for recovery tracking.
+                    val resolvedTaskIdMap = mutableMapOf<String, String>()
+                    for (node in persisted.nodes) {
+                        val canonicalId = "${persisted.id}#${node.id}"
+                        resolvedTaskIdMap[node.id] = node.actualTaskId ?: canonicalId
+                    }
+
                     synchronized(lock) {
                         if (workflows.containsKey(workflow.id)) continue
                         workflows[workflow.id] = workflow
-                        val taskIdMap = persisted.nodes
-                            .mapNotNull { node -> node.actualTaskId?.let { taskId -> node.id to taskId } }
-                            .toMap()
-                        workflowTaskIds[workflow.id] = taskIdMap
+                        workflowTaskIds[workflow.id] = resolvedTaskIdMap.toMap()
                     }
+
+                    // Persist recovered workflow with resolved mapping
+                    persistWorkflow(workflow, persisted.executionAttemptId, resolvedTaskIdMap.toMap())
+
                     if (workflow.state == TaskState.RUNNING) {
                         scope.launch {
                             monitorWorkflow(workflow.id)
                         }
                     }
                 }
+                recoveryDeferred.complete(Unit)
             } catch (e: Exception) {
-            } finally {
-                try {
-                    recoveryDeferred.complete(Unit)
-                } catch (e: IllegalStateException) {
-                }
+                recoveryDeferred.completeExceptionally(e)
             }
         }
     }
 
     private fun reconcileWorkflow(persisted: PersistedWorkflow): Workflow? {
-        val taskIdMap = persisted.nodes.associate { node ->
-            node.id to node.actualTaskId
-        }
-
-        for (node in persisted.nodes) {
-            val taskId = node.actualTaskId
-            if (taskId != null) {
-                val task = taskEngine.getTask(taskId)
-                if (task == null) {
-                    return null
-                }
-            }
-        }
-
         val nodes = persisted.nodes.map { node ->
             WorkflowNode(
                 id = node.id,
@@ -362,6 +367,67 @@ class WorkflowEngine(
 
         validateWorkflowGraph(nodes)
 
+        // Process nodes in topological order so dependencies exist before dependents.
+        val orderedNodes = topologicalSort(nodes)
+        val persistedNodeMap = persisted.nodes.associate { it.id to it }
+
+        // Resolve/create canonical Task IDs for every node.
+        val resolvedTaskIds = mutableMapOf<String, String>()
+        for (node in orderedNodes) {
+            val persistedNode = persistedNodeMap[node.id]!!
+            val canonicalId = "${persisted.id}#${node.id}"
+            val resolvedId: String
+
+            if (persistedNode.actualTaskId != null) {
+                val existingTask = taskEngine.getTask(persistedNode.actualTaskId)
+                if (existingTask != null) {
+                    // Case: actualTaskId exists and referenced Task exists
+                    resolvedId = persistedNode.actualTaskId
+                } else {
+                    // Case: actualTaskId exists but referenced Task is missing
+                    // Try canonical ID as fallback
+                    val canonicalTask = taskEngine.getTask(canonicalId)
+                    if (canonicalTask != null) {
+                        // Case: mapping conflict — persisted ID differs from canonical
+                        resolvedId = canonicalId
+                    } else {
+                        // Referenced task truly missing — create idempotently with canonical ID
+                        val createdTask = taskEngine.create(
+                            taskId = canonicalId,
+                            goal = node.goal,
+                            role = node.role,
+                            riskClass = node.riskClass,
+                            dependsOn = node.dependsOn.mapNotNull { depId ->
+                                resolvedTaskIds[depId]
+                            }
+                        )
+                        resolvedId = createdTask.id
+                    }
+                }
+            } else {
+                // Case: actualTaskId is null — look up canonical ID in TaskEngine
+                val canonicalTask = taskEngine.getTask(canonicalId)
+                if (canonicalTask != null) {
+                    // Case: actualTaskId null but canonical Task exists — adopt it
+                    resolvedId = canonicalId
+                } else {
+                    // Case: actualTaskId null and canonical Task does not exist
+                    // Create idempotently — will be created during execute() if not now
+                    val createdTask = taskEngine.create(
+                        taskId = canonicalId,
+                        goal = node.goal,
+                        role = node.role,
+                        riskClass = node.riskClass,
+                        dependsOn = node.dependsOn.mapNotNull { depId ->
+                            resolvedTaskIds[depId]
+                        }
+                    )
+                    resolvedId = createdTask.id
+                }
+            }
+            resolvedTaskIds[node.id] = resolvedId
+        }
+
         val workflow = Workflow(
             id = persisted.id,
             name = persisted.name,
@@ -373,45 +439,35 @@ class WorkflowEngine(
 
         when (workflow.state) {
             TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR -> {
+                // Terminal — no changes needed
             }
 
             TaskState.QUEUED -> {
+                // Not started — no changes needed
             }
 
             TaskState.RUNNING -> {
-                val allTerminal = persisted.nodes.all { node ->
-                    val taskId = node.actualTaskId
-                    if (taskId == null) false
-                    else {
-                        val task = taskEngine.getTask(taskId)
-                        task?.state in setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)
-                    }
+                val allTerminal = orderedNodes.all { node ->
+                    val taskId = resolvedTaskIds.getValue(node.id)
+                    val task = taskEngine.getTask(taskId)
+                    task?.state in setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)
                 }
 
-                val hasFailed = persisted.nodes.any { node ->
-                    val taskId = node.actualTaskId
-                    if (taskId == null) false
-                    else {
-                        val task = taskEngine.getTask(taskId)
-                        task?.state == TaskState.FAILED || task?.state == TaskState.ERROR
-                    }
+                val hasFailed = orderedNodes.any { node ->
+                    val taskId = resolvedTaskIds.getValue(node.id)
+                    val task = taskEngine.getTask(taskId)
+                    task?.state == TaskState.FAILED || task?.state == TaskState.ERROR
                 }
 
-                val hasFailedDependency = persisted.nodes.any { node ->
-                    val taskId = node.actualTaskId
-                    if (taskId == null) false
+                val hasFailedDependency = orderedNodes.any { node ->
+                    val taskId = resolvedTaskIds.getValue(node.id)
+                    val task = taskEngine.getTask(taskId)
+                    if (task == null || task.state in setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)) false
                     else {
-                        val task = taskEngine.getTask(taskId)
-                        if (task == null || task.state in setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)) false
-                        else {
-                            node.dependsOn.any { depNodeId ->
-                                val depTaskId = taskIdMap[depNodeId]
-                                if (depTaskId == null) false
-                                else {
-                                    val depTask = taskEngine.getTask(depTaskId)
-                                    depTask?.state == TaskState.FAILED || depTask?.state == TaskState.ERROR
-                                }
-                            }
+                        node.dependsOn.any { depNodeId ->
+                            val depTaskId = resolvedTaskIds.getValue(depNodeId)
+                            val depTask = depTaskId?.let { taskEngine.getTask(it) }
+                            depTask?.state == TaskState.FAILED || depTask?.state == TaskState.ERROR
                         }
                     }
                 }
@@ -429,14 +485,18 @@ class WorkflowEngine(
         return workflow
     }
 
-    private fun toPersisted(workflow: Workflow): PersistedWorkflow {
-        val taskIdMap = workflowTaskIds[workflow.id] ?: emptyMap()
+    private fun toPersisted(
+        workflow: Workflow,
+        executionAttemptId: String? = null,
+        taskIdMap: Map<String, String> = emptyMap()
+    ): PersistedWorkflow {
         return PersistedWorkflow(
             id = workflow.id,
             name = workflow.name,
             state = workflow.state.name,
             createdAt = workflow.createdAt,
             completedAt = workflow.completedAt,
+            executionAttemptId = executionAttemptId,
             nodes = workflow.nodes.map { node ->
                 PersistedWorkflowNode(
                     id = node.id,
@@ -452,14 +512,17 @@ class WorkflowEngine(
         )
     }
 
-    private suspend fun persistWorkflow(workflow: Workflow) = persistenceMutex.withLock {
+    private suspend fun persistWorkflow(
+        workflow: Workflow,
+        executionAttemptId: String? = null,
+        taskIdMap: Map<String, String> = emptyMap()
+    ) = persistenceMutex.withLock {
         val persisted = synchronized(lock) {
-            toPersisted(workflow)
+            toPersisted(workflow, executionAttemptId, taskIdMap)
         }
         val existing = workflowPersistence.loadAll()
         val updated = existing.filter { it.id != workflow.id } + persisted
         workflowPersistence.saveAll(updated)
     }
 
-    private data class PersistData(val workflow: Workflow, val persisted: PersistedWorkflow, val newState: TaskState)
 }
