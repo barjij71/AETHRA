@@ -2,13 +2,12 @@
 
 **Updated:** 2026-11-12  
 **Work branch:** `feature/skill-orchestration-architecture`  
-**Latest implementation commit under validation:** pending CI  
-**Previously verified implementation commit:** `3cbbe6373d85e38658559a6659969299999f2a2b`  
+**Implementation commit verified by Core CI:** `06ad4314df37d5b5308e477c0b421e5cf268e3a9`  
 **Pull request:** [#2 — Core-owned skill orchestration](https://github.com/barjij71/AETHRA/pull/2)
 
 ## Verified delivery
 
-The following implementation passed Core CI at `3cbbe6373d85e38658559a6659969299999f2a2b`:
+The following implementation is present in the work branch and passed Core CI at the implementation commit above:
 
 - Versioned `SkillManifest` parsing and basic field validation.
 - Registry registration starts every candidate **untrusted and disabled**; manifest flags do not activate a skill.
@@ -18,19 +17,19 @@ The following implementation passed Core CI at `3cbbe6373d85e38658559a6659969299
 - File-backed workflow snapshots with revisions, audit records, and stored artifact snapshots.
 - Recovery maps an interrupted non-idempotent `RUNNING` step to `UNKNOWN_OUTCOME` instead of invoking its executor again.
 - Approval payload matching and one-shot consumption; approval creation/consumption is synchronized, with a concurrent-consumption regression test.
-- Tier 3 actions are now rejected by workflow validation; the Core approval issuer only issues ordinary approvals for Tier 2. A separate high-assurance Tier 3 path is not implemented.
+- Tier 3 actions are rejected by workflow validation; the Core approval issuer only issues ordinary approvals for Tier 2. A separate high-assurance Tier 3 path is not implemented.
 
 ## CI evidence
 
-For commit `3cbbe6373d85e38658559a6659969299999f2a2b`:
+For implementation commit `06ad4314df37d5b5308e477c0b421e5cf268e3a9`:
 
-- [Run #52 — push](https://github.com/barjij71/AETHRA/actions/runs/43250712932): **success**
-- [Run #53 — pull request](https://github.com/barjij71/AETHRA/actions/runs/43250726365): **success**
+- [Run #56 — push](https://github.com/barjij71/AETHRA/actions/runs/43251753886): **success**
+- [Run #57 — pull request](https://github.com/barjij71/AETHRA/actions/runs/43251767669): **success**
 - Both jobs completed Python syntax validation, 6 Python policy tests, `gradle :core:test`, and `gradle :core:compileKotlin`.
 
-Earlier CI on `e97c694e6acc1096d164125f511507f992f5683a` also passed in [Run #50](https://github.com/barjij71/AETHRA/actions/runs/43250185031) and [Run #51](https://github.com/barjij71/AETHRA/actions/runs/43250197620).
+Earlier CI on `3cbbe6373d85e38658559a6659969299999f2a2b` also passed in [Run #52](https://github.com/barjij71/AETHRA/actions/runs/43250712932) and [Run #53](https://github.com/barjij71/AETHRA/actions/runs/43250726365).
 
-These are **Core CI results**, not Android APK build results. They do not establish Android production readiness. CI for the latest Tier 3 hardening commit is pending.
+These are **Core CI results**, not Android APK build results. They do not establish Android production readiness.
 
 ## Acceptance status
 
