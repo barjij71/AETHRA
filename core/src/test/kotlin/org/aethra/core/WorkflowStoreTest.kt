@@ -31,6 +31,7 @@ class WorkflowStoreTest {
         val file = kotlin.io.path.createTempFile("aethra-workflow-", ".json")
         try {
             val first = JsonFileWorkflowStore(file)
+            assertEquals(null, first.load("wf-restart", "task-restart"))
             first.save(
                 WorkflowExecutionRecord(
                     workflowId = "wf-restart",
