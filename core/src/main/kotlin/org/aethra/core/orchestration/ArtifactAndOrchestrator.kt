@@ -1,6 +1,7 @@
 package org.aethra.core.orchestration
 
 import kotlinx.coroutines.*
+import kotlinx.serialization.json.*
 import org.aethra.core.policy.PolicyEngine
 import org.aethra.core.policy.RiskTier
 import java.util.UUID
@@ -17,11 +18,73 @@ data class Artifact<T>(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+private fun Any?.toArtifactJson(): JsonElement = when (this) {
+    null -> JsonNull
+    is JsonElement -> this
+    is String -> JsonPrimitive(this)
+    is Char -> JsonPrimitive(toString())
+    is Boolean -> JsonPrimitive(this)
+    is Number -> JsonPrimitive(this)
+    is Map<*, *> -> JsonObject(entries.associate { entry ->
+        val key = entry.key as? String
+            ?: throw IllegalArgumentException("Artifact object keys must be strings")
+        key to entry.value.toArtifactJson()
+    })
+    is Iterable<*> -> JsonArray(map { it.toArtifactJson() })
+    is Array<*> -> JsonArray(map { it.toArtifactJson() })
+    else -> throw IllegalArgumentException(
+        "Artifact payload is not JSON-compatible: ${this?.javaClass?.name ?: "null"}"
+    )
+}
+
 class ArtifactStore {
     private val artifacts = LinkedHashMap<String, Artifact<*>>()
-    @Synchronized fun put(artifact: Artifact<*>) { artifacts[artifact.id] = artifact }
-    @Synchronized fun get(id: String): Artifact<*>? = artifacts[id]
-    @Synchronized fun all(): List<Artifact<*>> = artifacts.values.toList()
+
+    @Synchronized
+    fun put(artifact: Artifact<*>) {
+        artifacts[artifact.id] = artifact
+    }
+
+    @Synchronized
+    fun get(id: String): Artifact<*>? = artifacts[id]
+
+    @Synchronized
+    fun all(): List<Artifact<*>> = artifacts.values.toList()
+
+    @Synchronized
+    fun snapshot(taskId: String): Map<String, StoredArtifact> =
+        artifacts.values
+            .filter { it.taskId == taskId }
+            .associate { artifact ->
+                artifact.id to StoredArtifact(
+                    id = artifact.id,
+                    schemaVersion = artifact.schemaVersion,
+                    producerSkillId = artifact.producerSkillId,
+                    producerVersion = artifact.producerVersion,
+                    taskId = artifact.taskId,
+                    payload = artifact.value.toArtifactJson(),
+                    provenance = artifact.provenance,
+                    createdAt = artifact.createdAt
+                )
+            }
+
+    @Synchronized
+    fun restore(taskId: String, snapshot: Map<String, StoredArtifact>) {
+        snapshot.forEach { (id, stored) ->
+            require(id == stored.id) { "artifact snapshot key does not match artifact id" }
+            require(stored.taskId == taskId) { "artifact belongs to a different task" }
+            artifacts[id] = Artifact(
+                id = stored.id,
+                schemaVersion = stored.schemaVersion,
+                producerSkillId = stored.producerSkillId,
+                producerVersion = stored.producerVersion,
+                taskId = stored.taskId,
+                value = stored.payload,
+                provenance = stored.provenance,
+                createdAt = stored.createdAt
+            )
+        }
+    }
 }
 
 data class StepResult(
@@ -50,6 +113,7 @@ class Orchestrator(
         require(validation.isEmpty()) { validation.joinToString("; ") }
 
         val persisted = workflowStore.load(workflow.id, taskId)
+        persisted?.artifacts?.let { artifactStore.restore(taskId, it) }
         val results = LinkedHashMap<String, StepResult>()
         val auditEvents = (persisted?.audit ?: emptyList()).toMutableList()
 
@@ -79,8 +143,22 @@ class Orchestrator(
         persisted?.steps?.forEach { (id, record) ->
             val step = workflow.steps.firstOrNull { it.id == id } ?: return@forEach
             when (record.status) {
-                StepResult.Status.SUCCEEDED ->
-                    results[id] = StepResult(StepResult.Status.SUCCEEDED)
+                StepResult.Status.SUCCEEDED -> {
+                    val output = record.artifactId?.let(artifactStore::get)
+                    if (record.artifactId != null && output == null) {
+                        val reason = "recovered successful step artifact is missing; reconciliation required"
+                        results[id] = StepResult(StepResult.Status.UNKNOWN_OUTCOME, reason = reason)
+                        audit(
+                            step,
+                            "recovery.artifact_missing",
+                            StepResult.Status.UNKNOWN_OUTCOME,
+                            reason,
+                            artifactIds = listOf(record.artifactId)
+                        )
+                    } else {
+                        results[id] = StepResult(StepResult.Status.SUCCEEDED, output = output)
+                    }
+                }
                 StepResult.Status.RUNNING -> {
                     val idempotent = registry.get(step.skillId)?.manifest?.idempotent == true
                     if (!idempotent) {
@@ -113,7 +191,8 @@ class Orchestrator(
                             idempotencyKey = step.idempotencyKey(taskId)
                         )
                     },
-                    audit = auditEvents.toList()
+                    audit = auditEvents.toList(),
+                    artifacts = artifactStore.snapshot(taskId)
                 )
             )
         }

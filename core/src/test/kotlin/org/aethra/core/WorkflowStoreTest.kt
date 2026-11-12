@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import org.aethra.core.orchestration.*
+import kotlinx.serialization.json.JsonObject
 
 class WorkflowStoreTest {
     @Test
@@ -81,6 +82,76 @@ class WorkflowStoreTest {
             assertEquals(1, loaded.audit.size)
             assertEquals("skill-a", loaded.audit.single().skillId)
             assertEquals("artifact-1", loaded.audit.single().artifactIds.single())
+        } finally {
+            java.nio.file.Files.deleteIfExists(file)
+        }
+    }
+
+    @Test
+    fun restoresSuccessfulDependencyArtifactAfterRestart() = kotlinx.coroutines.test.runTest {
+        val registry = org.aethra.core.skills.SkillRegistry()
+        listOf("a", "b").forEach { id ->
+            registry.register(org.aethra.core.skills.SkillManifest(
+                id = id, version = "1.0.0", name = id, source = "test", license = "MIT",
+                inputSchemaVersion = "1", outputSchemaVersion = "1", trusted = true, enabled = true
+            ))
+            registry.setTrust(id, org.aethra.core.skills.TrustState.TRUSTED)
+            registry.enable(id)
+        }
+        val taskId = "task-artifact-restart"
+        val artifact = Artifact(
+            id = "artifact-a",
+            schemaVersion = "1",
+            producerSkillId = "a",
+            producerVersion = "1.0.0",
+            taskId = taskId,
+            value = mapOf("n" to 7),
+            provenance = "test"
+        )
+        val file = kotlin.io.path.createTempFile("aethra-artifact-recovery-", ".json")
+        try {
+            val originalArtifacts = ArtifactStore().apply { put(artifact) }
+            JsonFileWorkflowStore(file).save(
+                WorkflowExecutionRecord(
+                    workflowId = "wf-artifact-restart",
+                    taskId = taskId,
+                    steps = mapOf(
+                        "a" to StepExecutionRecord(
+                            "a", StepResult.Status.SUCCEEDED,
+                            artifactId = artifact.id,
+                            idempotencyKey = "$taskId::a"
+                        )
+                    ),
+                    artifacts = originalArtifacts.snapshot(taskId)
+                )
+            )
+
+            var downstreamReceivedArtifact = false
+            val result = Orchestrator(
+                registry = registry,
+                artifactStore = ArtifactStore(),
+                policy = org.aethra.core.policy.CorePolicyEngine(),
+                executor = SkillExecutor { step, inputs ->
+                    if (step.id == "b") {
+                        assertEquals(1, inputs.size)
+                        val payload = inputs.single().value as? JsonObject
+                        assertNotNull(payload)
+                        assertEquals("7", payload["n"]?.toString())
+                        downstreamReceivedArtifact = true
+                    }
+                    StepResult(StepResult.Status.SUCCEEDED)
+                },
+                workflowStore = JsonFileWorkflowStore(file)
+            ).run(
+                Workflow(
+                    "wf-artifact-restart",
+                    listOf(WorkflowStep("a", "a"), WorkflowStep("b", "b", setOf("a")))
+                ),
+                taskId
+            )
+
+            assertEquals(true, downstreamReceivedArtifact)
+            assertEquals(StepResult.Status.SUCCEEDED, result["b"]?.status)
         } finally {
             java.nio.file.Files.deleteIfExists(file)
         }

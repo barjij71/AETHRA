@@ -3,6 +3,7 @@ package org.aethra.core.orchestration
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createParentDirectories
@@ -34,12 +35,25 @@ data class AuditEvent(
 )
 
 @Serializable
+data class StoredArtifact(
+    val id: String,
+    val schemaVersion: String,
+    val producerSkillId: String,
+    val producerVersion: String,
+    val taskId: String,
+    val payload: JsonElement,
+    val provenance: String,
+    val createdAt: Long
+)
+
+@Serializable
 data class WorkflowExecutionRecord(
     val workflowId: String,
     val taskId: String,
     val revision: Int = 1,
     val steps: Map<String, StepExecutionRecord> = emptyMap(),
-    val audit: List<AuditEvent> = emptyList()
+    val audit: List<AuditEvent> = emptyList(),
+    val artifacts: Map<String, StoredArtifact> = emptyMap()
 )
 
 interface WorkflowStore {
