@@ -91,7 +91,9 @@ class JsonFileWorkflowStore(
 
     private fun readAll(): Map<String, WorkflowExecutionRecord> {
         if (!file.exists()) return emptyMap()
-        return json.decodeFromString<Map<String, WorkflowExecutionRecord>>(Files.readString(file))
+        val content = Files.readString(file)
+        if (content.isBlank()) return emptyMap()
+        return json.decodeFromString<Map<String, WorkflowExecutionRecord>>(content)
     }
 
     private fun key(workflowId: String, taskId: String) = "$workflowId::$taskId"
