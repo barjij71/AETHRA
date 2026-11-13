@@ -201,8 +201,9 @@ class Orchestrator(
         audit(event = "workflow.started")
         persistState()
 
-        coroutineScope {
-            while (remaining.isNotEmpty() || active.isNotEmpty()) {
+        try {
+            coroutineScope {
+                while (remaining.isNotEmpty() || active.isNotEmpty()) {
                 remaining.filter { step ->
                     step.dependsOn.any { dep ->
                         results[dep]?.status in setOf(
@@ -273,10 +274,24 @@ class Orchestrator(
                             return@async StepResult(StepResult.Status.BLOCKED, reason = inputValidation)
                         }
 
-                        val rawResult = runCatching {
+                        val rawResult = try {
                             withTimeout(30.seconds) { executor.execute(step, inputs) }
-                        }.getOrElse {
-                            StepResult(StepResult.Status.FAILED, reason = it.message ?: "execution error")
+                        } catch (timeout: TimeoutCancellationException) {
+                            StepResult(
+                                StepResult.Status.FAILED,
+                                reason = timeout.message ?: "execution timed out"
+                            )
+                        } catch (cancelled: CancellationException) {
+                            if (!currentCoroutineContext().isActive) throw cancelled
+                            StepResult(
+                                StepResult.Status.CANCELLED,
+                                reason = cancelled.message ?: "execution cancelled"
+                            )
+                        } catch (failure: Exception) {
+                            StepResult(
+                                StepResult.Status.FAILED,
+                                reason = failure.message ?: "execution error"
+                            )
                         }
                         val outputValidation = if (
                             rawResult.status == StepResult.Status.SUCCEEDED && rawResult.output != null
@@ -333,6 +348,19 @@ class Orchestrator(
                     persistState()
                 }
             }
+            }
+        } catch (cancelled: CancellationException) {
+            audit(
+                event = "workflow.cancelled",
+                status = StepResult.Status.CANCELLED,
+                reason = cancelled.message ?: "workflow cancelled"
+            )
+            try {
+                persistState()
+            } catch (persistenceFailure: Exception) {
+                cancelled.addSuppressed(persistenceFailure)
+            }
+            throw cancelled
         }
         audit(event = "workflow.finished")
         persistState()
