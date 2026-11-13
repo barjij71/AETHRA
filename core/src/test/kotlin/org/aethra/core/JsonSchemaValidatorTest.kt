@@ -49,6 +49,22 @@ class JsonSchemaValidatorTest {
     }
 
     @Test
+    fun rejectsDuplicateRequiredProperties() {
+        val duplicate = Json.parseToJsonElement(
+            """{"type":"object","required":["name","name"],"properties":{"name":{"type":"string"}}}"""
+        ).jsonObject
+        assertTrue(JsonSchemaValidator.validateSchema(duplicate).any { it.contains("required entries must be unique") })
+    }
+
+    @Test
+    fun rejectsEnumValuesThatAreNumericallyEquivalent() {
+        val duplicate = Json.parseToJsonElement(
+            """{"type":"number","enum":[1,1.0]}"""
+        ).jsonObject
+        assertTrue(JsonSchemaValidator.validateSchema(duplicate).any { it.contains("enum values must be unique") })
+    }
+
+    @Test
     fun enforcesArrayItemSchemasAndUniqueness() {
         val arraySchema = Json.parseToJsonElement(
             """{"type":"array","items":{"type":"integer"},"uniqueItems":true,"minItems":1}"""
