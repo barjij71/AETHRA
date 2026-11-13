@@ -4,6 +4,7 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import org.aethra.core.policy.PolicyEngine
 import org.aethra.core.policy.RiskTier
+import org.aethra.core.skills.JsonSchemaValidator
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
