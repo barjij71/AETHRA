@@ -4,9 +4,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import org.aethra.core.orchestration.*
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.*
 
 class WorkflowStoreTest {
+    private fun contractSchema() = Json.parseToJsonElement(
+        """{"type":"object","required":["n"],"properties":{"n":{"type":"integer"}},"additionalProperties":false}"""
+    ).jsonObject
+
     @Test
     fun savesAndLoadsWorkflowExecutionRecord() {
         val store = InMemoryWorkflowStore()
@@ -93,7 +97,9 @@ class WorkflowStoreTest {
         listOf("a", "b").forEach { id ->
             registry.register(org.aethra.core.skills.SkillManifest(
                 id = id, version = "1.0.0", name = id, source = "test", license = "MIT",
-                inputSchemaVersion = "1", outputSchemaVersion = "1", trusted = true, enabled = true
+                inputSchemaVersion = "1", outputSchemaVersion = "1", trusted = true, enabled = true,
+                inputSchema = if (id == "b") contractSchema() else null,
+                outputSchema = contractSchema()
             ))
             registry.setTrust(id, org.aethra.core.skills.TrustState.TRUSTED)
             registry.enable(id)
@@ -162,7 +168,8 @@ class WorkflowStoreTest {
         val registry = org.aethra.core.skills.SkillRegistry()
         registry.register(org.aethra.core.skills.SkillManifest(
             id = "once", version = "1.0.0", name = "once", source = "test", license = "MIT",
-            inputSchemaVersion = "1", outputSchemaVersion = "1", trusted = true, enabled = true, idempotent = false
+            inputSchemaVersion = "1", outputSchemaVersion = "1", trusted = true, enabled = true,
+            idempotent = false, outputSchema = contractSchema()
         ))
         registry.setTrust("once", org.aethra.core.skills.TrustState.TRUSTED)
         registry.enable("once")

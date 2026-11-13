@@ -18,7 +18,7 @@ data class Artifact<T>(
     val createdAt: Long = System.currentTimeMillis()
 )
 
-private fun Any?.toArtifactJson(): JsonElement = when (this) {
+internal fun Any?.toArtifactJson(): JsonElement = when (this) {
     null -> JsonNull
     is JsonElement -> this
     is String -> JsonPrimitive(this)
@@ -266,10 +266,38 @@ class Orchestrator(
                             return@async StepResult(StepResult.Status.BLOCKED, reason = reason)
                         }
                         val inputs = (dependencyInputs + explicitInputs).distinctBy { it.id }
-                        val result = runCatching {
+                        val inputValidation = validateInputs(step, inputs, taskId)
+                        if (inputValidation != null) {
+                            audit(step, "artifact.validation_failed", StepResult.Status.BLOCKED, inputValidation)
+                            return@async StepResult(StepResult.Status.BLOCKED, reason = inputValidation)
+                        }
+
+                        val rawResult = runCatching {
                             withTimeout(30.seconds) { executor.execute(step, inputs) }
                         }.getOrElse {
                             StepResult(StepResult.Status.FAILED, reason = it.message ?: "execution error")
+                        }
+                        val outputValidation = if (
+                            rawResult.status == StepResult.Status.SUCCEEDED && rawResult.output != null
+                        ) {
+                            validateOutput(step, rawResult.output, taskId)
+                        } else {
+                            null
+                        }
+                        val result = if (outputValidation != null) {
+                            audit(
+                                step,
+                                "artifact.validation_failed",
+                                StepResult.Status.FAILED,
+                                outputValidation,
+                                artifactIds = listOfNotNull(rawResult.output?.id)
+                            )
+                            StepResult(
+                                StepResult.Status.FAILED,
+                                reason = "output contract invalid: " + outputValidation
+                            )
+                        } else {
+                            rawResult
                         }
                         audit(
                             step,
@@ -309,4 +337,67 @@ class Orchestrator(
         persistState()
         return results
     }
+
+    private fun validateInputs(step: WorkflowStep, inputs: List<Artifact<*>>, taskId: String): String? {
+        val consumer = registry.get(step.skillId)?.manifest
+            ?: return "consumer skill is not registered"
+        val schema = consumer.inputSchema
+        if (schema == null) {
+            return if (inputs.isEmpty()) null else "skill does not declare an input schema"
+        }
+        if (inputs.isEmpty()) return "required input artifact is missing"
+
+        inputs.forEach { artifact ->
+            val producerError = validateArtifactForProducer(artifact, taskId)
+            if (producerError != null) return "input artifact invalid: " + producerError
+            if (artifact.schemaVersion != consumer.inputSchemaVersion) {
+                return "input schema version mismatch for skill " + step.skillId
+            }
+            val payload = runCatching { artifact.value.toArtifactJson() }.getOrElse {
+                return "input artifact is not JSON-compatible"
+            }
+            val errors = JsonSchemaValidator.validate(payload, schema)
+            if (errors.isNotEmpty()) {
+                return "input artifact does not match consumer schema: " + errors.joinToString("; ")
+            }
+        }
+        return null
+    }
+
+    private fun validateOutput(step: WorkflowStep, artifact: Artifact<*>, taskId: String): String? =
+        validateArtifactForProducer(artifact, taskId, expectedSkillId = step.skillId)
+
+    private fun validateArtifactForProducer(
+        artifact: Artifact<*>,
+        taskId: String,
+        expectedSkillId: String? = null
+    ): String? {
+        if (expectedSkillId != null && artifact.producerSkillId != expectedSkillId) {
+            return "artifact producer does not match executing skill"
+        }
+        if (artifact.taskId != taskId) return "artifact belongs to a different task"
+        if (artifact.provenance.isBlank()) return "artifact provenance is missing"
+
+        val producer = registry.get(artifact.producerSkillId)
+            ?: return "artifact producer is not registered"
+        val manifest = producer.manifest
+        if (
+            producer.trustState != org.aethra.core.skills.TrustState.TRUSTED ||
+            !manifest.trusted ||
+            !manifest.enabled
+        ) {
+            return "artifact producer is not trusted and enabled"
+        }
+        if (artifact.producerVersion != manifest.version) return "artifact producer version mismatch"
+        if (artifact.schemaVersion != manifest.outputSchemaVersion) return "artifact output schema version mismatch"
+
+        val schema = manifest.outputSchema ?: return "artifact producer has no output schema"
+        val payload = runCatching { artifact.value.toArtifactJson() }.getOrElse {
+            return "artifact payload is not JSON-compatible"
+        }
+        val errors = JsonSchemaValidator.validate(payload, schema)
+        if (errors.isNotEmpty()) return errors.joinToString("; ")
+        return null
+    }
+
 }

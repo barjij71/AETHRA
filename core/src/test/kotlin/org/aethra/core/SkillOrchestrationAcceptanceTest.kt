@@ -3,13 +3,24 @@ package org.aethra.core
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.*
 import org.aethra.core.orchestration.*
 import org.aethra.core.policy.*
 import org.aethra.core.skills.*
 import kotlin.test.*
 
 class SkillOrchestrationAcceptanceTest {
-    private fun skill(id: String, trusted: Boolean = true) = SkillManifest(id, "1.0.0", id, source="test", license="MIT", inputSchemaVersion="1", outputSchemaVersion="1", trusted=trusted, enabled=true)
+    private fun contractSchema() = Json.parseToJsonElement(
+        """{"type":"object","required":["n"],"properties":{"n":{"type":"integer"}},"additionalProperties":false}"""
+    ).jsonObject
+
+    private fun skill(id: String, trusted: Boolean = true, acceptsInput: Boolean = false) = SkillManifest(
+        id, "1.0.0", id, source = "test", license = "MIT",
+        inputSchemaVersion = "1", outputSchemaVersion = "1",
+        trusted = trusted, enabled = true,
+        inputSchema = if (acceptsInput) contractSchema() else null,
+        outputSchema = contractSchema()
+    )
 
     @Test fun manifestValidationRejectsInvalid() {
         assertFalse(SkillManifestValidator.validate(skill("BAD ID", false)).valid)
@@ -21,20 +32,22 @@ class SkillOrchestrationAcceptanceTest {
 
     @Test fun threeSkillsExchangeTypedArtifacts() = runTest {
         val registry = SkillRegistry()
-        listOf("a","b","c").forEach { registry.register(skill(it)); registry.setTrust(it, TrustState.TRUSTED); registry.enable(it) }
+        listOf(skill("a"), skill("b", acceptsInput = true), skill("c", acceptsInput = true)).forEach {
+            registry.register(it); registry.setTrust(it.id, TrustState.TRUSTED); registry.enable(it.id)
+        }
         val store = ArtifactStore()
         val seen = mutableListOf<String>()
         val executor = SkillExecutor { step, inputs ->
             when (step.skillId) {
                 "a" -> {
                     val out = Artifact(schemaVersion="1", producerSkillId="a", producerVersion="1.0.0", taskId="t1", value=mapOf("n" to 1), provenance="test")
-                    store.put(out); StepResult(StepResult.Status.SUCCEEDED, out)
+                    StepResult(StepResult.Status.SUCCEEDED, out)
                 }
                 "b" -> {
                     seen += "b"
                     assertEquals("a", inputs.single().producerSkillId)
                     val out = Artifact(schemaVersion="1", producerSkillId="b", producerVersion="1.0.0", taskId="t1", value=mapOf("n" to 2), provenance="test")
-                    store.put(out); StepResult(StepResult.Status.SUCCEEDED, out)
+                    StepResult(StepResult.Status.SUCCEEDED, out)
                 }
                 else -> {
                     seen += "c"
@@ -53,7 +66,9 @@ class SkillOrchestrationAcceptanceTest {
 
     @Test fun failedDependencyBlocksDownstream() = runTest {
         val registry = SkillRegistry()
-        listOf("a","b").forEach { registry.register(skill(it)); registry.setTrust(it, TrustState.TRUSTED); registry.enable(it) }
+        listOf(skill("a"), skill("b", acceptsInput = true)).forEach {
+            registry.register(it); registry.setTrust(it.id, TrustState.TRUSTED); registry.enable(it.id)
+        }
         val orchestrator = Orchestrator(registry, ArtifactStore(), CorePolicyEngine(), SkillExecutor { step, _ ->
             if (step.skillId == "a") StepResult(StepResult.Status.FAILED, reason="boom") else StepResult(StepResult.Status.SUCCEEDED)
         })
@@ -101,7 +116,9 @@ class SkillOrchestrationAcceptanceTest {
 
     @Test fun parallelIndependentStepsRunConcurrently() = runTest {
         val registry = SkillRegistry()
-        listOf("a","b").forEach { registry.register(skill(it)); registry.setTrust(it, TrustState.TRUSTED); registry.enable(it) }
+        listOf(skill("a"), skill("b")).forEach {
+            registry.register(it); registry.setTrust(it.id, TrustState.TRUSTED); registry.enable(it.id)
+        }
         var running = 0
         var maxRunning = 0
         val executor = SkillExecutor { _, _ ->
@@ -146,4 +163,90 @@ class SkillOrchestrationAcceptanceTest {
         assertNotNull(record)
         assertEquals(StepResult.Status.SUCCEEDED, record.steps["a"]?.status)
     }
+
+    @Test fun manifestRejectsUnsupportedSchemaKeyword() {
+        val invalidSchema = Json.parseToJsonElement(
+            """{"type":"object","unknownValidationKeyword":true}"""
+        ).jsonObject
+        assertFalse(SkillManifestValidator.validate(skill("bad").copy(outputSchema = invalidSchema)).valid)
+    }
+
+    @Test fun invalidOutputArtifactIsRejectedBeforeStorage() = runTest {
+        val registry = SkillRegistry()
+        registry.register(skill("producer"))
+        registry.setTrust("producer", TrustState.TRUSTED)
+        registry.enable("producer")
+        val store = ArtifactStore()
+        val workflowStore = InMemoryWorkflowStore()
+        val result = Orchestrator(
+            registry,
+            store,
+            CorePolicyEngine(),
+            SkillExecutor { _, _ ->
+                StepResult(
+                    StepResult.Status.SUCCEEDED,
+                    Artifact(
+                        schemaVersion = "1",
+                        producerSkillId = "producer",
+                        producerVersion = "1.0.0",
+                        taskId = "invalid-output-task",
+                        value = mapOf("n" to "not-an-integer"),
+                        provenance = "test"
+                    )
+                )
+            },
+            workflowStore = workflowStore
+        ).run(
+            Workflow("invalid-output-workflow", listOf(WorkflowStep("produce", "producer"))),
+            "invalid-output-task"
+        )
+
+        assertEquals(StepResult.Status.FAILED, result["produce"]?.status)
+        assertTrue(store.all().isEmpty())
+        assertTrue(
+            workflowStore.load("invalid-output-workflow", "invalid-output-task")
+                ?.audit?.any { it.event == "artifact.validation_failed" } == true
+        )
+    }
+
+    @Test fun invalidInputArtifactBlocksExecutor() = runTest {
+        val registry = SkillRegistry()
+        listOf(skill("producer"), skill("consumer", acceptsInput = true)).forEach {
+            registry.register(it)
+            registry.setTrust(it.id, TrustState.TRUSTED)
+            registry.enable(it.id)
+        }
+        val store = ArtifactStore()
+        store.put(
+            Artifact(
+                id = "invalid-input",
+                schemaVersion = "1",
+                producerSkillId = "producer",
+                producerVersion = "1.0.0",
+                taskId = "invalid-input-task",
+                value = mapOf("n" to "wrong"),
+                provenance = "test"
+            )
+        )
+        var executed = false
+        val result = Orchestrator(
+            registry,
+            store,
+            CorePolicyEngine(),
+            SkillExecutor { _, _ ->
+                executed = true
+                StepResult(StepResult.Status.SUCCEEDED)
+            }
+        ).run(
+            Workflow(
+                "invalid-input-workflow",
+                listOf(WorkflowStep("consume", "consumer", inputArtifactIds = setOf("invalid-input")))
+            ),
+            "invalid-input-task"
+        )
+
+        assertEquals(StepResult.Status.BLOCKED, result["consume"]?.status)
+        assertEquals(false, executed)
+    }
+
 }
