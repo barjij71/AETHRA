@@ -36,7 +36,7 @@ class JsonSchemaValidatorTest {
     @Test
     fun rejectsUnsupportedKeywordsInsteadOfIgnoringThem() {
         val unsupported = Json.parseToJsonElement(
-            """{"type":"object","$" + "ref":"https://example.invalid/schema"}"""
+            """{"type":"object","unsupportedValidationKeyword":true}"""
         ).jsonObject
         assertFalse(JsonSchemaValidator.validateSchema(unsupported).isEmpty())
     }
