@@ -1,7 +1,12 @@
 package org.aethra.core
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import org.aethra.core.orchestration.*
@@ -249,4 +254,66 @@ class SkillOrchestrationAcceptanceTest {
         assertEquals(false, executed)
     }
 
+
+    @Test fun executorCancellationIsRecordedAndBlocksDependents() = runTest {
+        val registry = SkillRegistry()
+        listOf(skill("a"), skill("b", acceptsInput = true)).forEach {
+            registry.register(it)
+            registry.setTrust(it.id, TrustState.TRUSTED)
+            registry.enable(it.id)
+        }
+        val invoked = mutableListOf<String>()
+        val results = Orchestrator(
+            registry,
+            ArtifactStore(),
+            CorePolicyEngine(),
+            SkillExecutor { step, _ ->
+                invoked += step.id
+                if (step.id == "a") throw CancellationException("cancelled by executor")
+                StepResult(StepResult.Status.SUCCEEDED)
+            }
+        ).run(
+            Workflow("cancel-step", listOf(
+                WorkflowStep("a", "a"),
+                WorkflowStep("b", "b", setOf("a"))
+            )),
+            "cancel-step"
+        )
+
+        assertEquals(StepResult.Status.CANCELLED, results["a"]?.status)
+        assertEquals(StepResult.Status.BLOCKED, results["b"]?.status)
+        assertEquals("dependency failed", results["b"]?.reason)
+        assertEquals(listOf("a"), invoked)
+    }
+
+    @Test fun parentCancellationPersistsWorkflowCancellationAndLeavesRunningStepForRecovery() = runTest {
+        val registry = SkillRegistry()
+        registry.register(skill("a"))
+        registry.setTrust("a", TrustState.TRUSTED)
+        registry.enable("a")
+        val started = CompletableDeferred<Unit>()
+        val workflowStore = InMemoryWorkflowStore()
+        val orchestrator = Orchestrator(
+            registry,
+            ArtifactStore(),
+            CorePolicyEngine(),
+            SkillExecutor { _, _ ->
+                started.complete(Unit)
+                awaitCancellation()
+            },
+            workflowStore = workflowStore
+        )
+        val workflow = Workflow("cancel-parent", listOf(WorkflowStep("a", "a")))
+        val job = launch { orchestrator.run(workflow, "cancel-parent") }
+
+        started.await()
+        job.cancelAndJoin()
+
+        val record = workflowStore.load("cancel-parent", "cancel-parent")
+        assertNotNull(record)
+        assertEquals(StepResult.Status.RUNNING, record.steps["a"]?.status)
+        assertTrue(record.audit.any {
+            it.event == "workflow.cancelled" && it.status == StepResult.Status.CANCELLED
+        })
+    }
 }
