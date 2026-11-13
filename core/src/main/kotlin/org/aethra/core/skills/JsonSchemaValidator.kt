@@ -70,6 +70,11 @@ object JsonSchemaValidator {
             val required = requiredElement as? JsonArray
             if (required == null || required.any { (it as? JsonPrimitive)?.let { p -> !p.isString } != false }) {
                 errors += path + ": required must be an array of strings"
+            } else {
+                val names = required.map { (it as JsonPrimitive).content }
+                if (names.size != names.toSet().size) {
+                    errors += path + ": required entries must be unique"
+                }
             }
         }
 
@@ -95,8 +100,13 @@ object JsonSchemaValidator {
         }
 
         val enumElement = schema["enum"]
-        if (enumElement != null && ((enumElement as? JsonArray)?.isEmpty() != false)) {
-            errors += path + ": enum must be a non-empty array"
+        if (enumElement != null) {
+            val enumValues = enumElement as? JsonArray
+            if (enumValues == null || enumValues.isEmpty()) {
+                errors += path + ": enum must be a non-empty array"
+            } else if (hasDuplicateJsonValues(enumValues)) {
+                errors += path + ": enum values must be unique"
+            }
         }
 
         val patternElement = schema["pattern"]
@@ -253,6 +263,39 @@ object JsonSchemaValidator {
         val maximum = (schema["maximum"] as? JsonPrimitive)?.content?.toBigDecimalOrNull()
         if (minimum != null && actual < minimum) errors += path + ": number is below minimum"
         if (maximum != null && actual > maximum) errors += path + ": number exceeds maximum"
+    }
+
+    private fun hasDuplicateJsonValues(values: JsonArray): Boolean =
+        values.indices.any { index ->
+            (0 until index).any { previous ->
+                jsonValuesEqual(values[previous], values[index])
+            }
+        }
+
+    private fun jsonValuesEqual(left: JsonElement, right: JsonElement): Boolean {
+        if (left == JsonNull || right == JsonNull) {
+            return left == JsonNull && right == JsonNull
+        }
+        return when {
+            left is JsonObject && right is JsonObject ->
+                left.keys == right.keys && left.all { (key, value) ->
+                    right[key]?.let { jsonValuesEqual(value, it) } == true
+                }
+            left is JsonArray && right is JsonArray ->
+                left.size == right.size && left.indices.all { jsonValuesEqual(left[it], right[it]) }
+            left is JsonPrimitive && right is JsonPrimitive -> when {
+                left.isString || right.isString ->
+                    left.isString && right.isString && left.content == right.content
+                left.booleanOrNull != null || right.booleanOrNull != null ->
+                    left.booleanOrNull != null && left.booleanOrNull == right.booleanOrNull
+                else -> {
+                    val leftNumber = left.content.toBigDecimalOrNull()
+                    val rightNumber = right.content.toBigDecimalOrNull()
+                    leftNumber != null && rightNumber != null && leftNumber.compareTo(rightNumber) == 0
+                }
+            }
+            else -> false
+        }
     }
 
     private fun matchesType(value: JsonElement, type: String): Boolean = when (type) {
