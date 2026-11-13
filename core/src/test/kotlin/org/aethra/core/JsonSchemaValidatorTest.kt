@@ -21,10 +21,11 @@ class JsonSchemaValidatorTest {
 
     @Test
     fun rejectsMissingRequiredAndWrongType() {
-        val payload = Json.parseToJsonElement("""{"name":"A","count":"three"}""")
-        val errors = JsonSchemaValidator.validate(payload, schema)
-        assertTrue(errors.any { it.contains("missing required property") })
-        assertTrue(errors.any { it.contains("expected integer") })
+        val missing = Json.parseToJsonElement("""{"name":"AETHRA"}""")
+        assertTrue(JsonSchemaValidator.validate(missing, schema).any { it.contains("missing required property") })
+
+        val wrongType = Json.parseToJsonElement("""{"name":"AETHRA","count":"three"}""")
+        assertTrue(JsonSchemaValidator.validate(wrongType, schema).any { it.contains("expected integer") })
     }
 
     @Test
