@@ -53,7 +53,8 @@ class WorkflowReconciler(
                 ReconciliationResolution.FAILED -> StepResult.Status.FAILED
             },
             reason = reason ?: evidence.summary,
-            artifactIds = listOfNotNull(artifactId)
+            artifactIds = listOfNotNull(artifactId),
+            evidenceReference = evidence.reference
         )
 
         val updatedSteps = current.steps.toMutableMap()
