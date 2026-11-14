@@ -150,13 +150,23 @@ class HermesAPI:
                     params={"command": shell_command},
                     actor=actor,
                 )
-                # Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø© Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠØ© Ù„Ù„ØªØ·ÙˆÙŠØ±
-                self.tool_dispatcher.approve_gate(gate.tool_id, "system")
+                if not gate.approved:
+                    tool_step.status = "pending"
+                    tool_step.error = "Explicit user approval required"
+                    duration = time.time() - start
+                    return HermesResponse(
+                        success=False,
+                        message="Approval required before executing the requested shell command",
+                        data={"task_id": task_id, "approval_id": gate.id, "tool_id": "shell.exec"},
+                        error="approval_required",
+                        steps=steps,
+                        duration_seconds=duration,
+                    )
                 result = self.tool_dispatcher.execute(
                     tool_id="shell.exec",
                     params={"command": shell_command},
                     actor=actor,
-                    gate_id=gate.tool_id,
+                    gate_id=gate.id,
                 )
                 tool_step.status = "completed" if result.success else "failed"
                 tool_step.output = result.output

@@ -212,7 +212,10 @@ def chat():
     response = None
     tasks = []
     try:
-        resp = aethra.hermes_api.send_message("web_demo", message, actor="web_user")
+        chat_adapter = aethra.hermes_api
+        if chat_adapter is None:
+            raise RuntimeError("Optional chat adapter is unavailable")
+        resp = chat_adapter.send_message("web_demo", message, actor="web_user")
         response = {
             "success": resp.success,
             "message": resp.message,
@@ -1528,14 +1531,15 @@ def system_test_page():
             params={"command": "echo 'AETHRA System Test Success'"},
             actor="system_test",
         )
-        _aethra.tool_dispatcher.approve_gate(gate.tool_id, "system_test")
+        if not gate.approved:
+            raise PermissionError("Sensitive shell test requires explicit user approval; command was not executed.")
         
         # Ø§Ù„Ø®Ø·ÙˆØ© 3: Ø§Ù„ØªÙ†ÙÙŠØ°
         exec_result = _aethra.tool_dispatcher.execute(
             tool_id="shell.exec",
             params={"command": "echo 'AETHRA System Test Success'"},
             actor="system_test",
-            gate_id=gate.tool_id,
+            gate_id=gate.id,
         )
         
         # Ø§Ù„Ø®Ø·ÙˆØ© 4: Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ù†ØªÙŠØ¬Ø©

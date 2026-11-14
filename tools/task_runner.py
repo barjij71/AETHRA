@@ -71,26 +71,28 @@ class TaskRunner:
 
         actor = task_obj.metadata.get("actor", "system")
 
-        # Ø¥Ø°Ø§ ØªÙ… ØªÙ…Ø±ÙŠØ± gate_idØŒ Ù†Ø³ØªØ®Ø¯Ù…Ù‡ Ù…Ø¨Ø§Ø´Ø±Ø©
-        if gate_id is not None:
-            gate = type("Gate", (), {"tool_id": gate_id, "approved": True})()
-        else:
+        if gate_id is None:
             gate = self.tool_dispatcher.request_execution(
                 tool_id=tool_id,
                 params=params,
                 actor=actor,
             )
-
-        if tool.requires_approval and not gate.approved:
-            task_obj.mark_failed("Ø§Ù„Ø£Ø¯Ø§Ø© ØªØªØ·Ù„Ø¨ Ù…ÙˆØ§ÙÙ‚Ø©: " + tool_id)
-            raise PermissionError("Ø§Ù„Ø£Ø¯Ø§Ø© ØªØªØ·Ù„Ø¨ Ù…ÙˆØ§ÙÙ‚Ø© Ù‚Ø¨Ù„ Ø§Ù„ØªÙ†ÙÙŠØ°: " + tool_id)
+            execution_gate_id = gate.id
+            if not gate.approved:
+                task_obj.mark_failed("Explicit approval required: " + tool_id)
+                raise PermissionError("Explicit approval required before tool execution: " + tool_id)
+        else:
+            execution_gate_id = gate_id
+            if not self.tool_dispatcher.is_approved(execution_gate_id):
+                task_obj.mark_failed("Approval gate is not approved: " + tool_id)
+                raise PermissionError("Approval gate is not approved: " + tool_id)
 
         task_obj.mark_started()
         result = self.tool_dispatcher.execute(
             tool_id=tool_id,
             params=params,
             actor=actor,
-            gate_id=gate_id if tool.requires_approval else None,
+            gate_id=execution_gate_id,
         )
 
         event = Event(

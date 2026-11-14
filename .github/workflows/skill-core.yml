@@ -1,0 +1,36 @@
+name: AETHRA Skill Core
+
+on:
+  push:
+    branches: ["feature/skill-orchestration-architecture"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Validate Python source syntax
+        run: python -m py_compile core/integration.py tools/dispatcher.py tools/task_runner.py ui/hermes_api.py web_demo.py
+      - name: Test Python policy boundaries
+        run: python -m unittest discover -s tests -v
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Test Core
+        run: gradle :core:test
+      - name: Compile Core
+        run: gradle :core:compileKotlin
