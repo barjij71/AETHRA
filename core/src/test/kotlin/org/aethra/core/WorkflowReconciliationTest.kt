@@ -30,7 +30,7 @@ class WorkflowReconciliationTest {
         )
 
         assertNull(result.steps["step"])
-        assertTrue(result.audit.any { it.event == "recovery.reconciled_not_executed" })
+        assertEquals("external-check-1", result.audit.last { it.event == "recovery.reconciled_not_executed" }.evidenceReference)
         assertEquals(2, result.revision)
     }
 
@@ -73,7 +73,7 @@ class WorkflowReconciliationTest {
 
         assertEquals(StepResult.Status.SUCCEEDED, result.steps["step"]?.status)
         assertEquals(artifact.id, result.steps["step"]?.artifactId)
-        assertTrue(result.audit.any { it.event == "recovery.reconciled_succeeded" })
+        assertEquals("external-check-2", result.audit.last { it.event == "recovery.reconciled_succeeded" }.evidenceReference)
     }
 
     @Test
@@ -102,6 +102,6 @@ class WorkflowReconciliationTest {
         )
 
         assertEquals(StepResult.Status.FAILED, result.steps["step"]?.status)
-        assertTrue(result.audit.any { it.event == "recovery.reconciled_failed" })
+        assertEquals("external-check-3", result.audit.last { it.event == "recovery.reconciled_failed" }.evidenceReference)
     }
 }
