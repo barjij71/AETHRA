@@ -31,7 +31,8 @@ data class AuditEvent(
     val status: StepResult.Status? = null,
     val reason: String? = null,
     val artifactIds: List<String> = emptyList(),
-    val approvalId: String? = null
+    val approvalId: String? = null,
+    val evidenceReference: String? = null
 )
 
 @Serializable
