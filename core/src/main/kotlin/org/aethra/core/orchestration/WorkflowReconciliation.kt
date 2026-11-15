@@ -10,7 +10,8 @@ enum class ReconciliationResolution {
 
 data class ReconciliationEvidence(
     val reference: String,
-    val summary: String
+    val summary: String,
+    val idempotencyKey: String
 )
 
 class WorkflowReconciler(
@@ -35,6 +36,9 @@ class WorkflowReconciler(
             ?: error("workflow step record not found: $stepId")
         require(step.status == StepResult.Status.RUNNING || step.status == StepResult.Status.UNKNOWN_OUTCOME) {
             "step is not awaiting reconciliation: $stepId"
+        }
+        require(evidence.idempotencyKey == step.idempotencyKey) {
+            "reconciliation evidence is bound to a different idempotency key"
         }
 
         val auditEvent = AuditEvent(
