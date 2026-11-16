@@ -32,7 +32,8 @@ data class AuditEvent(
     val reason: String? = null,
     val artifactIds: List<String> = emptyList(),
     val approvalId: String? = null,
-    val evidenceReference: String? = null
+    val evidenceReference: String? = null,
+    val idempotencyKey: String? = null
 )
 
 @Serializable
