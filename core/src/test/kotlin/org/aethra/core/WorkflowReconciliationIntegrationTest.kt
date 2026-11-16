@@ -136,6 +136,7 @@ class WorkflowReconciliationIntegrationTest {
                 it.event == "recovery.reconciled_not_executed"
             }
             assertEquals(evidence.reference, reconciliationEvent.evidenceReference)
+            assertEquals(evidence.idempotencyKey, reconciliationEvent.idempotencyKey)
             assertEquals(approval.id, reconciliationEvent.approvalId)
             assertFalse("once-step" in reconciled.steps)
 
