@@ -3,6 +3,7 @@ package org.aethra.core.orchestration
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import org.aethra.core.policy.PolicyEngine
+import org.aethra.core.policy.Approval
 import org.aethra.core.policy.RiskTier
 import org.aethra.core.skills.JsonSchemaValidator
 import java.util.UUID
@@ -108,6 +109,134 @@ class Orchestrator(
     private val maxParallelism: Int = 2,
     private val workflowStore: WorkflowStore = InMemoryWorkflowStore()
 ) {
+    private companion object {
+        const val RECONCILIATION_ACTION = "workflow.reconcile.not_executed"
+    }
+
+    /**
+     * Creates a one-shot Tier 2 approval for the exact evidence and step that would
+     * be eligible for an explicit NOT_EXECUTED reconciliation.
+     */
+    fun requestReconciliationApproval(
+        workflow: Workflow,
+        taskId: String,
+        stepId: String,
+        evidence: ReconciliationEvidence,
+        actor: String = "user"
+    ): Approval? {
+        val step = pendingReconciliationStep(workflow, taskId, stepId, evidence)
+        require(actor.isNotBlank()) { "reconciliation actor is required" }
+        return policy.requestApproval(
+            actor = actor,
+            action = RECONCILIATION_ACTION,
+            target = reconciliationTarget(workflow, taskId, step),
+            normalizedPayload = reconciliationPayload(evidence),
+            risk = RiskTier.TIER_2
+        )
+    }
+
+    /**
+     * Resolves an interrupted step through the same stores and policy instance
+     * used by this orchestrator. NOT_EXECUTED is a replay authorization and
+     * therefore consumes a one-shot approval bound to the exact step and evidence.
+     */
+    fun reconcileStep(
+        workflow: Workflow,
+        taskId: String,
+        stepId: String,
+        resolution: ReconciliationResolution,
+        evidence: ReconciliationEvidence,
+        artifactId: String? = null,
+        reason: String? = null,
+        approvalId: String? = null,
+        actor: String = "user"
+    ): WorkflowExecutionRecord {
+        val step = pendingReconciliationStep(workflow, taskId, stepId, evidence)
+        val target = reconciliationTarget(workflow, taskId, step)
+        when (resolution) {
+            ReconciliationResolution.NOT_EXECUTED -> {
+                require(!approvalId.isNullOrBlank()) {
+                    "explicit one-shot approval is required before a non-executed step can be replayed"
+                }
+                require(
+                    policy.consumeApproval(
+                        approvalId,
+                        actor,
+                        RECONCILIATION_ACTION,
+                        target,
+                        reconciliationPayload(evidence)
+                    )
+                ) { "reconciliation approval is invalid, expired, mismatched, or already used" }
+            }
+            ReconciliationResolution.SUCCEEDED -> {
+                require(approvalId == null) { "approval is only accepted for NOT_EXECUTED reconciliation" }
+                require(!artifactId.isNullOrBlank()) { "reconciled success requires an artifact id" }
+                val artifact = artifactStore.get(artifactId)
+                    ?: error("reconciled success artifact is not present in the artifact store")
+                val validationError = validateOutput(step, artifact, taskId)
+                require(validationError == null) {
+                    "reconciled success artifact is invalid: $validationError"
+                }
+            }
+            ReconciliationResolution.FAILED -> {
+                require(approvalId == null) { "approval is only accepted for NOT_EXECUTED reconciliation" }
+                require(artifactId == null) { "failed reconciliation cannot attach a success artifact" }
+            }
+        }
+        return WorkflowReconciler(workflowStore, artifactStore).reconcile(
+            workflowId = workflow.id,
+            taskId = taskId,
+            stepId = stepId,
+            resolution = resolution,
+            evidence = evidence,
+            artifactId = artifactId,
+            reason = reason,
+            approvalId = approvalId
+        )
+    }
+
+    private fun pendingReconciliationStep(
+        workflow: Workflow,
+        taskId: String,
+        stepId: String,
+        evidence: ReconciliationEvidence
+    ): WorkflowStep {
+        require(workflow.id.isNotBlank()) { "workflow id is required" }
+        require(taskId.isNotBlank()) { "task id is required" }
+        require(evidence.reference.isNotBlank()) { "reconciliation evidence reference is required" }
+        require(evidence.summary.isNotBlank()) { "reconciliation evidence summary is required" }
+        require(evidence.idempotencyKey.isNotBlank()) { "reconciliation idempotency key is required" }
+        val step = workflow.steps.filter { it.id == stepId }.singleOrNull()
+            ?: error("workflow must contain exactly one step with id: $stepId")
+        val record = workflowStore.load(workflow.id, taskId)
+            ?: error("workflow execution record not found")
+        val persistedStep = record.steps[stepId]
+            ?: error("workflow step is not awaiting reconciliation: $stepId")
+        require(
+            persistedStep.status == StepResult.Status.RUNNING ||
+                persistedStep.status == StepResult.Status.UNKNOWN_OUTCOME
+        ) { "workflow step is not awaiting reconciliation: $stepId" }
+        val expectedKey = step.idempotencyKey(taskId)
+        require(persistedStep.idempotencyKey.isNotBlank() && persistedStep.idempotencyKey == expectedKey) {
+            "persisted step idempotency key does not match the workflow step"
+        }
+        require(evidence.idempotencyKey == expectedKey) {
+            "reconciliation evidence is bound to a different idempotency key"
+        }
+        return step
+    }
+
+    private fun reconciliationTarget(workflow: Workflow, taskId: String, step: WorkflowStep): String =
+        "workflow:${workflow.id}/task:$taskId/step:${step.id}"
+
+    private fun reconciliationPayload(evidence: ReconciliationEvidence): String =
+        buildJsonObject {
+            put("resolution", ReconciliationResolution.NOT_EXECUTED.name)
+            put("idempotencyKey", evidence.idempotencyKey)
+            put("evidenceReference", evidence.reference)
+            put("evidenceSummary", evidence.summary)
+        }.toString()
+
     suspend fun run(workflow: Workflow, taskId: String): Map<String, StepResult> {
         require(maxParallelism > 0) { "maxParallelism must be positive" }
         val validation = WorkflowValidator(registry).validate(workflow)
