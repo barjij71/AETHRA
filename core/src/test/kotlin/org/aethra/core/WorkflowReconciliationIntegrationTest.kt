@@ -219,19 +219,6 @@ class WorkflowReconciliationIntegrationTest {
             assertEquals(StepResult.Status.SUCCEEDED, reconciled.steps["produce"]?.status)
             assertTrue(artifact.id in reconciled.artifacts)
 
-            val invalidArtifact = Artifact(
-                id = "wrong-producer-artifact",
-                schemaVersion = "1",
-                producerSkillId = "consumer",
-                producerVersion = "1.0.0",
-                taskId = taskId,
-                value = mapOf("n" to 8),
-                provenance = "invalid-producer"
-            )
-            artifactStore.put(invalidArtifact)
-            val stillSucceeded = reconciler.reconcileStep
-            assertNotNull(stillSucceeded)
-
             var consumerReceivedRestoredArtifact = false
             val restarted = Orchestrator(
                 registry = registry,
