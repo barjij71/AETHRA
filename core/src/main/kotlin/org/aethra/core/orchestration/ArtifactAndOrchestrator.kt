@@ -260,8 +260,9 @@ class Orchestrator(
             record.steps[dependency]?.artifactId
         }).toSortedSet()
         val inputDigests = inputIds.map { id ->
-            val artifact = record.artifacts[id]
-                ?: error("cannot approve replay because input artifact is not durably stored: $id")
+            val artifact = requireNotNull(record.artifacts[id]) {
+                "cannot approve replay because input artifact is not durably stored: $id"
+            }
             val canonicalArtifact = buildJsonObject {
                 put("id", artifact.id)
                 put("schemaVersion", artifact.schemaVersion)
