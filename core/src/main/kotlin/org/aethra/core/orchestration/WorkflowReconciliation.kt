@@ -14,7 +14,7 @@ data class ReconciliationEvidence(
     val idempotencyKey: String
 )
 
-class WorkflowReconciler(
+internal class WorkflowReconciler(
     private val workflowStore: WorkflowStore,
     private val artifactStore: ArtifactStore? = null
 ) {
@@ -25,10 +25,12 @@ class WorkflowReconciler(
         resolution: ReconciliationResolution,
         evidence: ReconciliationEvidence,
         artifactId: String? = null,
-        reason: String? = null
+        reason: String? = null,
+        approvalId: String? = null
     ): WorkflowExecutionRecord {
         require(evidence.reference.isNotBlank()) { "reconciliation evidence reference is required" }
         require(evidence.summary.isNotBlank()) { "reconciliation evidence summary is required" }
+        require(evidence.idempotencyKey.isNotBlank()) { "reconciliation idempotency key is required" }
 
         val current = workflowStore.load(workflowId, taskId)
             ?: error("workflow execution record not found")
@@ -37,6 +39,7 @@ class WorkflowReconciler(
         require(step.status == StepResult.Status.RUNNING || step.status == StepResult.Status.UNKNOWN_OUTCOME) {
             "step is not awaiting reconciliation: $stepId"
         }
+        require(step.idempotencyKey.isNotBlank()) { "persisted step idempotency key is missing" }
         require(evidence.idempotencyKey == step.idempotencyKey) {
             "reconciliation evidence is bound to a different idempotency key"
         }
@@ -58,10 +61,12 @@ class WorkflowReconciler(
             },
             reason = reason ?: evidence.summary,
             artifactIds = listOfNotNull(artifactId),
+            approvalId = approvalId,
             evidenceReference = evidence.reference
         )
 
         val updatedSteps = current.steps.toMutableMap()
+        val updatedArtifacts = current.artifacts.toMutableMap()
         when (resolution) {
             ReconciliationResolution.NOT_EXECUTED -> {
                 updatedSteps.remove(stepId)
@@ -69,9 +74,9 @@ class WorkflowReconciler(
             ReconciliationResolution.SUCCEEDED -> {
                 require(artifactStore != null) { "artifact store is required to reconcile success" }
                 require(artifactId != null) { "artifact id is required to reconcile success" }
-                require(artifactStore.get(artifactId) != null) {
-                    "reconciled success artifact is not present in the artifact store"
-                }
+                val storedArtifact = artifactStore.snapshot(taskId)[artifactId]
+                    ?: error("reconciled success artifact is not present for this task in the artifact store")
+                updatedArtifacts[artifactId] = storedArtifact
                 updatedSteps[stepId] = step.copy(
                     status = StepResult.Status.SUCCEEDED,
                     reason = evidence.summary,
@@ -89,7 +94,8 @@ class WorkflowReconciler(
         val updated = current.copy(
             revision = current.revision + 1,
             steps = updatedSteps,
-            audit = current.audit + auditEvent
+            audit = current.audit + auditEvent,
+            artifacts = updatedArtifacts
         )
         workflowStore.save(updated)
         return workflowStore.load(workflowId, taskId) ?: updated
