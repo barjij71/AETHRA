@@ -62,7 +62,8 @@ internal class WorkflowReconciler(
             reason = reason ?: evidence.summary,
             artifactIds = listOfNotNull(artifactId),
             approvalId = approvalId,
-            evidenceReference = evidence.reference
+            evidenceReference = evidence.reference,
+            idempotencyKey = evidence.idempotencyKey
         )
 
         val updatedSteps = current.steps.toMutableMap()
