@@ -1,15 +1,15 @@
 # Skill Orchestration Delivery Status
 
-**Updated:** 2026-11-15  
+**Updated:** 2026-11-16  
 **Work branch:** `feature/skill-orchestration-architecture`  
-**Latest implementation commit:** `520cf098f4bf5b69abaa5c70c72a5272a4404e5f`  
-**Latest test commit:** `7ee4524fcdd3a1f344004fe10840c57c02525cc0`  
-**Latest verified Core CI:** [Run #83](https://github.com/barjij71/AETHRA/actions/runs/43609043754) at `86e1c19c04d4541cd3a2776fcb128ff823a9361b`  
+**Latest implementation commit:** `ea45c1784af74950ba3ff7c1ca0543e19da5e3e5`  
+**Latest regression-test commit:** `87382721d0e1837a25bc5aeb73d7ee1caba07d74`  
+**Latest verified Core CI:** [Run #110](https://github.com/barjij71/AETHRA/actions/runs/43904764901) at `87382721d0e1837a25bc5aeb73d7ee1caba07d74`  
 **Pull request:** [#2 — Core-owned skill orchestration](https://github.com/barjij71/AETHRA/pull/2)
 
 ## Verified delivery
 
-The following implementation is present in the work branch:
+The following implementation is present in the work branch and the latest Core changes passed Run #110:
 
 - Versioned `SkillManifest` parsing, field validation, and fail-closed validation of the documented JSON Schema subset.
 - The JSON Schema subset validates types, properties, required fields, additional properties, array items, enum/const, patterns, string and numeric bounds, array bounds, and unique items. Unsupported keywords (including external `$ref`) are rejected rather than silently ignored.
@@ -22,19 +22,21 @@ The following implementation is present in the work branch:
 - Approval payload matching and one-shot consumption; approval creation/consumption is synchronized, with a concurrent-consumption regression test.
 - Tier 3 actions are rejected by workflow validation; the Core approval issuer only issues ordinary approvals for Tier 2. A separate high-assurance Tier 3 path is not implemented.
 - Executor-originated cancellation is recorded as `CANCELLED`; dependent steps are blocked. Parent workflow cancellation is rethrown, audited as `workflow.cancelled`, and persisted while active steps remain `RUNNING` so recovery does not falsely claim a terminal result.
-- Reconciliation is now bound to the persisted step idempotency key. Evidence for another action is rejected before changing workflow state.
-- Reconciliation can persist a `NOT_EXECUTED`, `SUCCEEDED`, or `FAILED` decision and carries an evidence reference in the durable audit record.
-- A regression test recreates `JsonFileWorkflowStore` after a simulated process restart and verifies the reconciliation result and evidence remain persisted.
+- Reconciliation is exposed through the same Core-owned `Orchestrator` instance and its `WorkflowStore`, `ArtifactStore`, and `PolicyEngine`; the lower-level reconciler is module-internal.
+- `NOT_EXECUTED` replay is limited to trusted, enabled, non-idempotent skills and requires a one-shot Tier 2 approval. The approval is bound to workflow/task/step, skill ID and version, dependency edges, explicit input artifact IDs and their durable SHA-256 digests, evidence reference/summary, and the step idempotency key.
+- Reconciliation rejects a changed evidence payload or changed step input before changing workflow state. A successful `NOT_EXECUTED` decision consumes the approval and records its ID, evidence reference, and idempotency key in the durable audit.
+- `SUCCEEDED` reconciliation validates the artifact against the executing skill, task, producer version, provenance, and output schema. The artifact snapshot is copied into the durable workflow record so a newly created Orchestrator can restore it and pass it to downstream steps after restart.
+- Regression tests cover simulated process death, `UNKNOWN_OUTCOME`, no automatic replay, approval-required replay, payload/input mismatch rejection, approved resume, and downstream consumption of a reconciled artifact after recreating the file-backed stores.
 
 ## CI evidence
 
-For `86e1c19c04d4541cd3a2776fcb128ff823a9361b`:
+For current branch head `87382721d0e1837a25bc5aeb73d7ee1caba07d74`:
 
-- [Run #83 — AETHRA Skill Core](https://github.com/barjij71/AETHRA/actions/runs/43609043754): **success**
+- [Run #110 — AETHRA Skill Core](https://github.com/barjij71/AETHRA/actions/runs/43904764901): **success**
 - Job `core-test`: **success**
 - Completed steps: Python source syntax validation, Python policy-boundary tests, `gradle :core:test`, and `gradle :core:compileKotlin`.
 
-The newer commits `520cf098` and `7ee4524f` were pushed after Run #83. At this report time GitHub has not yet associated a workflow run with `7ee4524fcdd3a1f344004fe10840c57c02525cc0`; therefore Run #83 does **not** certify these newer changes. The latest changes remain **implemented but CI-unverified**.
+Run #110 is associated with the current implementation/test head above. This is Core CI evidence, not an Android APK build result.
 
 ## Acceptance status
 
@@ -49,21 +51,23 @@ The newer commits `520cf098` and `7ee4524f` were pushed after Run #83. At this r
 | Concurrent one-shot approval | Covered by `PolicyEngineConcurrencyTest` |
 | Tier-3 default denial | Implemented; separate high-assurance exception path is not implemented |
 | File-backed restart snapshot and audit | Covered by `WorkflowStoreTest` |
-| Non-idempotent interrupted step is not replayed | Covered by `nonIdempotentRunningStepRecoversAsUnknownOutcome` |
-| Reconciliation evidence bound to idempotency key | Added; CI pending on commits `520cf098` + `7ee4524f` |
-| Reconciliation survives persisted-store restart | Added; CI pending on commit `7ee4524f` |
+| Non-idempotent interrupted step is not replayed automatically | Covered by `nonIdempotentRunningStepRecoversAsUnknownOutcome` |
+| Orchestrator-owned reconciliation and safe resume | Covered by `WorkflowReconciliationIntegrationTest` |
+| `NOT_EXECUTED` replay requires exact one-shot approval | Covered by `notExecutedReconciliationRequiresExactApprovalAndResumesThroughOrchestratorAfterRestart` |
+| Replay approval bound to step inputs and durable artifact digests | Covered by changed-evidence and changed-input rejection in the integration test |
+| Reconciled success persists a validated artifact for downstream use after restart | Covered by `reconciledSuccessPersistsValidatedArtifactForDownstreamAfterRestart` |
+| Wrong-producer artifact rejected without state mutation | Covered by `reconciledSuccessRejectsArtifactFromAnotherSkillBeforeChangingState` |
 | Supported JSON Schema subset and fail-closed keyword handling | Implemented and covered by `JsonSchemaValidatorTest`; full JSON Schema compatibility and broader schema-version compatibility policy remain incomplete |
-| Invalid producer output is rejected before storage | Covered by `invalidOutputArtifactIsRejectedBeforeStorage` |
+| Invalid producer output rejected before storage | Covered by `invalidOutputArtifactIsRejectedBeforeStorage` |
 | Executor cancellation and downstream blocking | Covered by `executorCancellationIsRecordedAndBlocksDependents` |
 | Parent cancellation audit and persisted in-flight state | Covered by `parentCancellationPersistsWorkflowCancellationAndLeavesRunningStepForRecovery` |
 | Authenticated human approval UI/identity and durable approval ledger | **Incomplete**; current Core approval store is in-memory and actor identity is supplied by the caller |
-| Evidence, observable side-effect, and postcondition verifier | **Incomplete**; output-schema validation exists, but this is not a complete verifier |
+| Evidence authenticity, observable side-effect, and postcondition verifier | **Incomplete**; output-schema and artifact provenance checks exist, but they are not a complete external-effect verifier |
 | Durable Android-native Workflow/Artifact Store | **Incomplete**; current file store is a JVM implementation, not an Android lifecycle adapter |
-| Retry policy and full resume/reconciliation of `UNKNOWN_OUTCOME` | **Incomplete**; reconciliation API is implemented but retry policy and complete resume integration remain |
+| Automatic retry policy and Android-safe full background resume | **Incomplete**; explicit reconciliation/resume is integrated, but bounded retry/backoff policy and Android lifecycle integration remain |
 | Independent Event Bus integration | **Incomplete**; audit events are persisted with workflow snapshots |
 | `SKILL.md` importer and untrusted MCP adapter | **Not implemented** |
 | CPU/RAM/storage/network/battery/thermal controls | **Not implemented** |
-| Android APK build and device validation | **Not verified** |
 
 ## Phase A / Android foundation
 
@@ -73,13 +77,13 @@ The latest Android CI evidence currently available for that branch is [Run #26](
 
 - Core tests: **success**
 - Assemble debug APK: **failure** at `:app:assembleDebug` / `:app:compileDebugKotlin`
-- The log includes conflicting declarations in `Runtime.kt` and `PlatformAdapters.kt`, inaccessible lifecycle/domain types, unresolved Core APIs, and Android adapter type mismatches.
+- The compiler log reports unresolved Core/API references, duplicate declarations in `Runtime.kt` and `PlatformAdapters.kt`, interface-signature mismatches, and incompatible Skill/Permission/Tool types.
 
-Therefore Phase A is **not accepted as complete**. No Android APK success is claimed. The current skill-orchestration branch remains based on current `main`; PR #1 and the divergent Android branches are left untouched.
+Therefore Phase A is **not accepted as complete**. No Android APK success is claimed. No Android branch or PR #1 changes were made in this run.
 
 ## Safety and architecture
 
-AETHRA Core remains the owner of workflow validation, scheduling, artifact handoff, trust gating, policy checks, cancellation state, and recovery state. Hermes, model providers, imported instructions, and MCP are not required by the Core.
+AETHRA Core remains the owner of workflow validation, scheduling, artifact handoff, trust gating, policy checks, cancellation state, reconciliation, and recovery state. Hermes, model providers, imported instructions, and MCP are not required by the Core.
 
 The trust-state API is internal to the Core Kotlin module, but this is not a sandbox boundary against arbitrary code already executing inside that module. External adapters must not be given direct registry mutation access.
 
