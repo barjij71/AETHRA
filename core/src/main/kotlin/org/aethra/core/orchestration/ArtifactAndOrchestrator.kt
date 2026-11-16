@@ -125,12 +125,13 @@ class Orchestrator(
         actor: String = "user"
     ): Approval? {
         val step = pendingReconciliationStep(workflow, taskId, stepId, evidence)
+        requireReplayableStep(step)
         require(actor.isNotBlank()) { "reconciliation actor is required" }
         return policy.requestApproval(
             actor = actor,
             action = RECONCILIATION_ACTION,
             target = reconciliationTarget(workflow, taskId, step),
-            normalizedPayload = reconciliationPayload(evidence),
+            normalizedPayload = reconciliationPayload(step, evidence),
             risk = RiskTier.TIER_2
         )
     }
@@ -155,6 +156,7 @@ class Orchestrator(
         val target = reconciliationTarget(workflow, taskId, step)
         when (resolution) {
             ReconciliationResolution.NOT_EXECUTED -> {
+                requireReplayableStep(step)
                 require(!approvalId.isNullOrBlank()) {
                     "explicit one-shot approval is required before a non-executed step can be replayed"
                 }
@@ -164,7 +166,7 @@ class Orchestrator(
                         actor,
                         RECONCILIATION_ACTION,
                         target,
-                        reconciliationPayload(evidence)
+                        reconciliationPayload(step, evidence)
                     )
                 ) { "reconciliation approval is invalid, expired, mismatched, or already used" }
             }
@@ -226,16 +228,39 @@ class Orchestrator(
         return step
     }
 
-    private fun reconciliationTarget(workflow: Workflow, taskId: String, step: WorkflowStep): String =
-        "workflow:${workflow.id}/task:$taskId/step:${step.id}"
+    private fun requireReplayableStep(step: WorkflowStep) {
+        val registered = registry.get(step.skillId)
+            ?: error("replay skill is no longer registered")
+        require(
+            registered.trustState == org.aethra.core.skills.TrustState.TRUSTED &&
+                registered.manifest.trusted &&
+                registered.manifest.enabled
+        ) { "replay skill is not trusted and enabled" }
+        require(!registered.manifest.idempotent) {
+            "explicit NOT_EXECUTED reconciliation is reserved for non-idempotent steps"
+        }
+    }
 
-    private fun reconciliationPayload(evidence: ReconciliationEvidence): String =
-        buildJsonObject {
+    private fun reconciliationTarget(workflow: Workflow, taskId: String, step: WorkflowStep): String {
+        val version = registry.get(step.skillId)?.manifest?.version ?: "unknown"
+        return "workflow:${workflow.id}/task:$taskId/step:${step.id}/skill:${step.skillId}@$version"
+    }
+
+    private fun reconciliationPayload(step: WorkflowStep, evidence: ReconciliationEvidence): String {
+        val version = registry.get(step.skillId)?.manifest?.version ?: "unknown"
+        return buildJsonObject {
             put("resolution", ReconciliationResolution.NOT_EXECUTED.name)
+            put("stepId", step.id)
+            put("skillId", step.skillId)
+            put("skillVersion", version)
+            put("dependsOn", JsonArray(step.dependsOn.sorted().map { JsonPrimitive(it) }))
+            put("inputArtifactIds", JsonArray(step.inputArtifactIds.sorted().map { JsonPrimitive(it) }))
+            put("riskTier", step.riskTier.name)
             put("idempotencyKey", evidence.idempotencyKey)
             put("evidenceReference", evidence.reference)
             put("evidenceSummary", evidence.summary)
         }.toString()
+    }
 
     suspend fun run(workflow: Workflow, taskId: String): Map<String, StepResult> {
         require(maxParallelism > 0) { "maxParallelism must be positive" }
