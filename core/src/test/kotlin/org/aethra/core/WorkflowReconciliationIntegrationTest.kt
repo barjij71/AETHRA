@@ -123,6 +123,17 @@ class WorkflowReconciliationIntegrationTest {
                     approvalId = approval.id
                 )
             }
+            val changedStepWorkflow = workflow.copy(
+                steps = listOf(workflow.steps.single().copy(inputArtifactIds = setOf("different-input")))
+            )
+            assertFailsWith<IllegalArgumentException> {
+                restarted.reconcileStep(
+                    changedStepWorkflow, taskId, "once-step",
+                    ReconciliationResolution.NOT_EXECUTED,
+                    evidence,
+                    approvalId = approval.id
+                )
+            }
 
             val reconciled = restarted.reconcileStep(
                 workflow = workflow,
