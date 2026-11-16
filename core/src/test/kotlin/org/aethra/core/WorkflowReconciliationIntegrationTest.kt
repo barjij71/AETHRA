@@ -64,13 +64,26 @@ class WorkflowReconciliationIntegrationTest {
         )
         val file = Files.createTempFile("aethra-reconcile-replay-", ".json")
         val registry = trustedRegistry(manifest("once", idempotent = false))
+        val artifacts = ArtifactStore().apply {
+            put(
+                Artifact(
+                    id = "replay-input",
+                    schemaVersion = "1",
+                    producerSkillId = "once",
+                    producerVersion = "1.0.0",
+                    taskId = taskId,
+                    value = mapOf("marker" to "original"),
+                    provenance = "approval-binding-test"
+                )
+            )
+        }
         var executions = 0
 
         try {
             val started = CompletableDeferred<Unit>()
             val firstOrchestrator = Orchestrator(
                 registry = registry,
-                artifactStore = ArtifactStore(),
+                artifactStore = artifacts,
                 policy = CorePolicyEngine(),
                 executor = SkillExecutor { _, _ ->
                     executions += 1
@@ -89,7 +102,7 @@ class WorkflowReconciliationIntegrationTest {
 
             val restarted = Orchestrator(
                 registry = registry,
-                artifactStore = ArtifactStore(),
+                artifactStore = artifacts,
                 policy = CorePolicyEngine(),
                 executor = SkillExecutor { _, _ ->
                     executions += 1
