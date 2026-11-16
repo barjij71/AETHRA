@@ -7,6 +7,7 @@ import org.aethra.core.policy.Approval
 import org.aethra.core.policy.RiskTier
 import org.aethra.core.skills.JsonSchemaValidator
 import java.util.UUID
+import java.security.MessageDigest
 import kotlin.time.Duration.Companion.seconds
 
 data class Artifact<T>(
@@ -131,7 +132,7 @@ class Orchestrator(
             actor = actor,
             action = RECONCILIATION_ACTION,
             target = reconciliationTarget(workflow, taskId, step),
-            normalizedPayload = reconciliationPayload(step, evidence),
+            normalizedPayload = reconciliationPayload(workflow, taskId, step, evidence),
             risk = RiskTier.TIER_2
         )
     }
@@ -166,7 +167,7 @@ class Orchestrator(
                         actor,
                         RECONCILIATION_ACTION,
                         target,
-                        reconciliationPayload(step, evidence)
+                        reconciliationPayload(workflow, taskId, step, evidence)
                     )
                 ) { "reconciliation approval is invalid, expired, mismatched, or already used" }
             }
@@ -246,8 +247,39 @@ class Orchestrator(
         return "workflow:${workflow.id}/task:$taskId/step:${step.id}/skill:${step.skillId}@$version"
     }
 
-    private fun reconciliationPayload(step: WorkflowStep, evidence: ReconciliationEvidence): String {
+    private fun reconciliationPayload(
+        workflow: Workflow,
+        taskId: String,
+        step: WorkflowStep,
+        evidence: ReconciliationEvidence
+    ): String {
         val version = registry.get(step.skillId)?.manifest?.version ?: "unknown"
+        val record = workflowStore.load(workflow.id, taskId)
+            ?: error("workflow execution record not found while binding reconciliation approval")
+        val inputIds = (step.inputArtifactIds + step.dependsOn.mapNotNull { dependency ->
+            record.steps[dependency]?.artifactId
+        }).toSortedSet()
+        val inputDigests = inputIds.map { id ->
+            val artifact = record.artifacts[id]
+                ?: error("cannot approve replay because input artifact is not durably stored: $id")
+            val canonicalArtifact = buildJsonObject {
+                put("id", artifact.id)
+                put("schemaVersion", artifact.schemaVersion)
+                put("producerSkillId", artifact.producerSkillId)
+                put("producerVersion", artifact.producerVersion)
+                put("taskId", artifact.taskId)
+                put("payload", artifact.payload)
+                put("provenance", artifact.provenance)
+                put("createdAt", artifact.createdAt)
+            }.toString()
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(canonicalArtifact.toByteArray(Charsets.UTF_8))
+                .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            buildJsonObject {
+                put("artifactId", id)
+                put("sha256", digest)
+            }
+        }
         return buildJsonObject {
             put("resolution", ReconciliationResolution.NOT_EXECUTED.name)
             put("stepId", step.id)
@@ -255,6 +287,7 @@ class Orchestrator(
             put("skillVersion", version)
             put("dependsOn", JsonArray(step.dependsOn.sorted().map { JsonPrimitive(it) }))
             put("inputArtifactIds", JsonArray(step.inputArtifactIds.sorted().map { JsonPrimitive(it) }))
+            put("inputArtifactDigests", JsonArray(inputDigests))
             put("riskTier", step.riskTier.name)
             put("idempotencyKey", evidence.idempotencyKey)
             put("evidenceReference", evidence.reference)
