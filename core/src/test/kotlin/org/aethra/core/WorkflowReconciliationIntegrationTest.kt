@@ -137,7 +137,7 @@ class WorkflowReconciliationIntegrationTest {
                 )
             }
             val changedStepWorkflow = workflow.copy(
-                steps = listOf(workflow.steps.single().copy(inputArtifactIds = setOf("different-input")))
+                steps = listOf(workflow.steps.single().copy(inputArtifactIds = setOf("replay-input")))
             )
             assertFailsWith<IllegalArgumentException> {
                 restarted.reconcileStep(
