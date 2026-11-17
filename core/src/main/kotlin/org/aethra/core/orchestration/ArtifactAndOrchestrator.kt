@@ -45,6 +45,13 @@ class ArtifactStore {
 
     @Synchronized
     fun put(artifact: Artifact<*>) {
+        val existing = artifacts[artifact.id]
+        if (existing != null) {
+            require(existing == artifact) {
+                "artifact id is immutable and already stores different content"
+            }
+            return
+        }
         artifacts[artifact.id] = artifact
     }
 
@@ -76,15 +83,17 @@ class ArtifactStore {
         snapshot.forEach { (id, stored) ->
             require(id == stored.id) { "artifact snapshot key does not match artifact id" }
             require(stored.taskId == taskId) { "artifact belongs to a different task" }
-            artifacts[id] = Artifact(
-                id = stored.id,
-                schemaVersion = stored.schemaVersion,
-                producerSkillId = stored.producerSkillId,
-                producerVersion = stored.producerVersion,
-                taskId = stored.taskId,
-                value = stored.payload,
-                provenance = stored.provenance,
-                createdAt = stored.createdAt
+            put(
+                Artifact(
+                    id = stored.id,
+                    schemaVersion = stored.schemaVersion,
+                    producerSkillId = stored.producerSkillId,
+                    producerVersion = stored.producerVersion,
+                    taskId = stored.taskId,
+                    value = stored.payload,
+                    provenance = stored.provenance,
+                    createdAt = stored.createdAt
+                )
             )
         }
     }
