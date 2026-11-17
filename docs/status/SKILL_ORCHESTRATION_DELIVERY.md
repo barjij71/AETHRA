@@ -1,9 +1,9 @@
 # Skill Orchestration Delivery Status
 
-**Updated:** 2026-11-16  
+**Updated:** 2026-11-17  
 **Work branch:** `feature/skill-orchestration-architecture`  
-**Latest implementation commit:** `ea45c1784af74950ba3ff7c1ca0543e19da5e3e5`  
-**Latest regression-test commit:** `87382721d0e1837a25bc5aeb73d7ee1caba07d74`  
+**Latest implementation commit:** `1b39f7855364bf9ca0f7786f1d254c024de0d2e3  
+**Latest regression-test commit:** `0eb090d59c70bee39dd18e9e67a08774ba11a75c  
 **Latest verified Core CI:** [Run #110](https://github.com/barjij71/AETHRA/actions/runs/43904764901) at `87382721d0e1837a25bc5aeb73d7ee1caba07d74`  
 **Pull request:** [#2 — Core-owned skill orchestration](https://github.com/barjij71/AETHRA/pull/2)
 
@@ -27,6 +27,10 @@ The following implementation is present in the work branch and the latest Core c
 - Reconciliation rejects a changed evidence payload or changed step input before changing workflow state. A successful `NOT_EXECUTED` decision consumes the approval and records its ID, evidence reference, and idempotency key in the durable audit.
 - `SUCCEEDED` reconciliation validates the artifact against the executing skill, task, producer version, provenance, and output schema. The artifact snapshot is copied into the durable workflow record so a newly created Orchestrator can restore it and pass it to downstream steps after restart.
 - Regression tests cover simulated process death, `UNKNOWN_OUTCOME`, no automatic replay, approval-required replay, payload/input mismatch rejection, approved resume, and downstream consumption of a reconciled artifact after recreating the file-backed stores.
+
+
+- Artifact identities are now immutable in the Core `ArtifactStore`: re-inserting an existing ID with identical content is idempotent, while changing payload, provenance, metadata, or producer identity is rejected. Snapshot restoration uses the same guard, preventing durable recovery from replacing an already accepted artifact with conflicting content.
+- Regression coverage is present in `ArtifactStoreImmutabilityTest` for identical re-insertion, conflicting payload/provenance, and conflicting snapshot restoration. This change is committed but not yet covered by a new GitHub Actions run at the time of this update.
 
 ## CI evidence
 
@@ -88,3 +92,7 @@ AETHRA Core remains the owner of workflow validation, scheduling, artifact hando
 The trust-state API is internal to the Core Kotlin module, but this is not a sandbox boundary against arbitrary code already executing inside that module. External adapters must not be given direct registry mutation access.
 
 No changes were made to `main`; PR #2 remains open and Draft.
+
+## 2026-11-17 execution note
+
+The current branch head is `0eb090d59c70bee39dd18e9e67a08774ba11a75c`. GitHub currently reports no status checks or workflow run attached to this SHA yet. Therefore this run must be classified as **implemented, regression-tested in code, CI not yet verified for the current SHA**; the previous Run #110 remains evidence only for its own SHA.
