@@ -1,6 +1,6 @@
 # Skill Orchestration Delivery Status
 
-**Updated:** 2026-11-17  
+**Updated:** 2026-11-18  
 **Work branch:** `feature/skill-orchestration-architecture`  
 **Latest implementation commit:** `1b39f7855364bf9ca0f7786f1d254c024de0d2e3  
 **Latest regression-test commit:** `0eb090d59c70bee39dd18e9e67a08774ba11a75c  
@@ -31,6 +31,12 @@ The following implementation is present in the work branch and the latest Core c
 
 - Artifact identities are now immutable in the Core `ArtifactStore`: re-inserting an existing ID with identical content is idempotent, while changing payload, provenance, metadata, or producer identity is rejected. Snapshot restoration uses the same guard, preventing durable recovery from replacing an already accepted artifact with conflicting content.
 - Regression coverage is present in `ArtifactStoreImmutabilityTest` for identical re-insertion, conflicting payload/provenance, and conflicting snapshot restoration. This change is committed but not yet covered by a new GitHub Actions run at the time of this update.
+
+## Workflow lifecycle event bus
+
+The Core now exposes an injectable `WorkflowEventBus` for orchestrator lifecycle events. `Orchestrator` publishes its existing immutable `AuditEvent` stream to the bus while retaining the durable `WorkflowStore` audit as the source of persisted recovery history. The default `NoOpWorkflowEventBus` keeps the Core provider-independent. `InMemoryWorkflowEventBus` isolates subscriber failures so observers cannot alter execution or policy decisions. Regression tests cover ordered delivery, unsubscribe behavior, and observer-failure isolation.
+
+This event bus is an observation boundary, not a policy bypass: subscribers receive events and cannot mutate workflow state through the bus.
 
 ## CI evidence
 
@@ -96,3 +102,8 @@ No changes were made to `main`; PR #2 remains open and Draft.
 ## 2026-11-17 execution note
 
 The current branch head is `0eb090d59c70bee39dd18e9e67a08774ba11a75c`. GitHub currently reports no status checks or workflow run attached to this SHA yet. Therefore this run must be classified as **implemented, regression-tested in code, CI not yet verified for the current SHA**; the previous Run #110 remains evidence only for its own SHA.
+
+
+## 2026-11-18 execution note
+
+Workflow lifecycle events are now implemented and regression-tested on the branch. The latest commit is `6337b3e862163222e905b338384399f93754fd72`. GitHub Actions has not yet produced a run associated with this SHA, so this change is **not yet CI-verified**. The previously successful Core run remains evidence only for its own commit.
