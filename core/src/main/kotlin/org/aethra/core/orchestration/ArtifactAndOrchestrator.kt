@@ -117,7 +117,8 @@ class Orchestrator(
     private val policy: PolicyEngine,
     private val executor: SkillExecutor,
     private val maxParallelism: Int = 2,
-    private val workflowStore: WorkflowStore = InMemoryWorkflowStore()
+    private val workflowStore: WorkflowStore = InMemoryWorkflowStore(),
+    private val eventBus: WorkflowEventBus = NoOpWorkflowEventBus
 ) {
     private companion object {
         const val RECONCILIATION_ACTION = "workflow.reconcile.not_executed"
@@ -323,7 +324,7 @@ class Orchestrator(
             artifactIds: List<String> = emptyList(),
             approvalId: String? = null
         ) {
-            auditEvents += AuditEvent(
+            val auditEvent = AuditEvent(
                 eventId = UUID.randomUUID().toString(),
                 workflowId = workflow.id,
                 taskId = taskId,
@@ -336,6 +337,8 @@ class Orchestrator(
                 artifactIds = artifactIds,
                 approvalId = approvalId
             )
+            auditEvents += auditEvent
+            eventBus.publish(auditEvent)
         }
 
         persisted?.steps?.forEach { (id, record) ->
