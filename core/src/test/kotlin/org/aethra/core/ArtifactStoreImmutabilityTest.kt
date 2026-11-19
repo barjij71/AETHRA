@@ -5,8 +5,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import org.aethra.core.orchestration.Artifact
 import org.aethra.core.orchestration.ArtifactStore
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonObject
 
 class ArtifactStoreImmutabilityTest {
     private fun artifact(
@@ -84,7 +85,8 @@ class ArtifactStoreImmutabilityTest {
         assertEquals(original.producerVersion, restored?.producerVersion)
         assertEquals(original.taskId, restored?.taskId)
         assertEquals(original.provenance, restored?.provenance)
-        assertEquals(JsonPrimitive(7), restored?.value?.let { it.toString().let(JsonPrimitive::parse) }?.jsonPrimitive)
+        val restoredPayload = assertNotNull(restored?.value as? JsonObject)
+        assertEquals(JsonPrimitive(7), restoredPayload["n"])
     }
 
     @Test
