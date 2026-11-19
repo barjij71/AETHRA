@@ -47,13 +47,22 @@ class ArtifactStore {
     fun put(artifact: Artifact<*>) {
         val existing = artifacts[artifact.id]
         if (existing != null) {
-            require(existing == artifact) {
+            require(artifactEquivalent(existing, artifact)) {
                 "artifact id is immutable and already stores different content"
             }
             return
         }
         artifacts[artifact.id] = artifact
     }
+
+    private fun artifactEquivalent(left: Artifact<*>, right: Artifact<*>): Boolean =
+        left.schemaVersion == right.schemaVersion &&
+            left.producerSkillId == right.producerSkillId &&
+            left.producerVersion == right.producerVersion &&
+            left.taskId == right.taskId &&
+            left.provenance == right.provenance &&
+            left.createdAt == right.createdAt &&
+            left.value.toArtifactJson() == right.value.toArtifactJson()
 
     @Synchronized
     fun get(id: String): Artifact<*>? = artifacts[id]
