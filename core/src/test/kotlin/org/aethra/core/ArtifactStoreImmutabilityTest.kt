@@ -56,6 +56,38 @@ class ArtifactStoreImmutabilityTest {
     }
 
     @Test
+    fun restoreOfEquivalentJsonPayloadIsIdempotentAcrossProcessSerialization() {
+        val store = ArtifactStore()
+        store.put(artifact())
+
+        val original = artifact()
+        val snapshot = mapOf(
+            original.id to org.aethra.core.orchestration.StoredArtifact(
+                id = original.id,
+                schemaVersion = original.schemaVersion,
+                producerSkillId = original.producerSkillId,
+                producerVersion = original.producerVersion,
+                taskId = original.taskId,
+                payload = kotlinx.serialization.json.JsonObject(
+                    mapOf("n" to JsonPrimitive(7))
+                ),
+                provenance = original.provenance,
+                createdAt = original.createdAt
+            )
+        )
+
+        store.restore("task-1", snapshot)
+
+        val restored = store.get(original.id)
+        assertEquals(original.schemaVersion, restored?.schemaVersion)
+        assertEquals(original.producerSkillId, restored?.producerSkillId)
+        assertEquals(original.producerVersion, restored?.producerVersion)
+        assertEquals(original.taskId, restored?.taskId)
+        assertEquals(original.provenance, restored?.provenance)
+        assertEquals(JsonPrimitive(7), restored?.value?.let { it.toString().let(JsonPrimitive::parse) }?.jsonPrimitive)
+    }
+
+    @Test
     fun restoreCannotReplaceExistingArtifactWithDifferentContent() {
         val store = ArtifactStore()
         store.put(artifact())
