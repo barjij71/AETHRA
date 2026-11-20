@@ -1,7 +1,24 @@
+# Built application files
+*.apk
+*.ap_
+# Build output directory
+build
+*/build
+
+# Gradle build cache
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Log files
+*.log
+
+# OS / editor
+.DS_Store
+*.iml
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.class
 *.so
 .Python
 build/

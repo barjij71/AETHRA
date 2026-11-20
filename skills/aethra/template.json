@@ -1,0 +1,94 @@
+{
+  "name": "aethra",
+  "version": "1.0.0",
+  "entry": "SKILL.md",
+  "routing": "router-only",
+  "description": "AETHRA development workflow system — scoped workflows for safe, incremental development on the AETHRA repository.",
+  "commands": [
+    {
+      "name": "core",
+      "description": "Core task engine: TaskEngine, task state, execution lifecycle",
+      "skill": "workflows/core/SKILL.md"
+    },
+    {
+      "name": "tasks",
+      "description": "Task creation, scheduling, and lifecycle management",
+      "skill": "workflows/tasks/SKILL.md"
+    },
+    {
+      "name": "dependencies",
+      "description": "Task dependency chains, wake-up logic, approval on dependency wake-up",
+      "skill": "workflows/dependencies/SKILL.md"
+    },
+    {
+      "name": "memory",
+      "description": "MemoryEngine, persistence, storage, local-first memory",
+      "skill": "workflows/memory/SKILL.md"
+    },
+    {
+      "name": "providers",
+      "description": "AI provider interface, routing, fallback decisions",
+      "skill": "workflows/providers/SKILL.md"
+    },
+    {
+      "name": "tools",
+      "description": "Tool registry, native Android tools, skill tools",
+      "skill": "workflows/tools/SKILL.md"
+    },
+    {
+      "name": "policy",
+      "description": "Permission broker, policy engine, risk classes, approval gates",
+      "skill": "workflows/policy/SKILL.md"
+    },
+    {
+      "name": "android-runtime",
+      "description": "Runtime.kt, PlatformAdapters, Lifecycle, CoreRegistry wiring",
+      "skill": "workflows/android-runtime/SKILL.md"
+    },
+    {
+      "name": "android-ui",
+      "description": "AthraHomePage, MainActivity, Compose UI, task/event display",
+      "skill": "workflows/android-ui/SKILL.md"
+    },
+    {
+      "name": "external",
+      "description": "ExternalCapability, ExternalCapabilityRouter, external capability contracts",
+      "skill": "workflows/external/SKILL.md"
+    },
+    {
+      "name": "github",
+      "description": "GitHub Actions workflows, CI integration, APK artifact verification",
+      "skill": "workflows/github/SKILL.md"
+    },
+    {
+      "name": "mcp",
+      "description": "MCP integration workflow",
+      "skill": "workflows/mcp/SKILL.md"
+    },
+    {
+      "name": "instabox",
+      "description": "InstaBox remote computer adapter: transport, lifecycle, credential boundary",
+      "skill": "workflows/instabox/SKILL.md"
+    },
+    {
+      "name": "security",
+      "description": "Security model, trust boundaries, permission tiers, audit",
+      "skill": "workflows/security/SKILL.md"
+    },
+    {
+      "name": "testing",
+      "description": "Test patterns, contract tests, deterministic validation",
+      "skill": "workflows/testing/SKILL.md"
+    },
+    {
+      "name": "review",
+      "description": "Architecture review, design review, change verification",
+      "skill": "workflows/review/SKILL.md"
+    },
+    {
+      "name": "release",
+      "description": "CI, APK builds, releases, evidence collection",
+      "skill": "workflows/release/SKILL.md"
+    }
+  ]
+}

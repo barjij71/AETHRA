@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">إيثرا</string>
+
+    <!-- Home screen -->
+    <string name="home_title">وقت تشغيل إيثرا</string>
+    <string name="running_yes">نعم</string>
+    <string name="running_no">لا</string>
+    <string name="active_tasks">نشط: %1$d</string>
+    <string name="queued_tasks">في الانتظار: %1$d</string>
+    <string name="settings_button">الإعدادات</string>
+    <string name="command_placeholder">اكتب أمرًا، على سبيل المثال device.info</string>
+    <string name="run_button">تشغيل</string>
+    <string name="tasks_section">المهام</string>
+    <string name="no_tasks">لا توجد مهام بعد.</string>
+    <string name="events_section">الأحداث</string>
+    <string name="no_events">لا توجد أحداث بعد.</string>
+    <string name="skills_section">المهارات</string>
+    <string name="no_skills">لا توجد مهارات بعد.</string>
+    <string name="memory_section">الذاكرة</string>
+    <string name="no_memory">لا توجد ذكريات بعد.</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_settings">الإعدادات</string>
+    <string name="nav_voice">الصوت</string>
+    <string name="nav_device">الجهاز</string>
+
+    <!-- Settings -->
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_language">اللغة</string>
+    <string name="settings_theme">السمة</string>
+    <string name="settings_visual_effects">التأثيرات البصرية</string>
+    <string name="settings_power_saving">وضع توفير الطاقة</string>
+    <string name="settings_voice_ui">تفضيلات واجهة الصوت</string>
+    <string name="setting_enabled">مفعل</string>
+    <string name="setting_disabled">معطل</string>
+
+    <!-- Voice shell (not yet implemented) -->
+    <string name="voice_title">الصوت</string>
+    <string name="voice_not_implemented">إدخال الصوت غير منفذ بعد.</string>
+    <string name="voice_coming_soon">سيصل دعم STT وTTS وعبارة الاستيقاظ في مرحلة قادمة.</string>
+
+    <!-- Device shell (not yet implemented) -->
+    <string name="device_title">الجهاز</string>
+    <string name="device_not_implemented">التحكم في الجهاز غير منفذ بعد.</string>
+    <string name="device_coming_soon">سيصل محولات الهاتف والجهاز في مرحلة قادمة.</string>
+</resources>
