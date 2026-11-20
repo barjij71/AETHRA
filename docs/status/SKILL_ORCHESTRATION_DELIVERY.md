@@ -1,9 +1,9 @@
 # Skill Orchestration Delivery Status
 
-**Updated:** 2026-11-18  
+**Updated:** 2026-11-20  
 **Work branch:** `feature/skill-orchestration-architecture`  
-**Latest implementation commit:** `1b39f7855364bf9ca0f7786f1d254c024de0d2e3  
-**Latest regression-test commit:** `0eb090d59c70bee39dd18e9e67a08774ba11a75c  
+**Latest implementation commit:** `55d922fb0ec0f647734f779fe183084010fba957`  
+**Latest regression-test commit:** `55d922fb0ec0f647734f779fe183084010fba957`  
 **Latest verified Core CI:** [Run #110](https://github.com/barjij71/AETHRA/actions/runs/43904764901) at `87382721d0e1837a25bc5aeb73d7ee1caba07d74`  
 **Pull request:** [#2 — Core-owned skill orchestration](https://github.com/barjij71/AETHRA/pull/2)
 
@@ -107,3 +107,10 @@ The current branch head is `0eb090d59c70bee39dd18e9e67a08774ba11a75c`. GitHub cu
 ## 2026-11-18 execution note
 
 Workflow lifecycle events are now implemented and regression-tested on the branch. The latest commit is `6337b3e862163222e905b338384399f93754fd72`. GitHub Actions has not yet produced a run associated with this SHA, so this change is **not yet CI-verified**. The previously successful Core run remains evidence only for its own commit.
+
+
+## 2026-11-20 execution note
+
+The branch head is now `55d922fb0ec0f647734f779fe183084010fba957`. Live GitHub Actions evidence for the previous head `953d00d241d657d20f22f8b2ee23a32c5246ddee` is Run #131, which failed during `core:compileTestKotlin` because `ArtifactStoreImmutabilityTest.kt` used `assertNotNull` without importing it. The failure was a test-compilation defect, not a production Core failure. The missing import was corrected on the current branch head. No workflow run is attached to `55d922fb...` yet, so the current fix remains **implemented, CI pending**.
+
+The authoritative CI workflow is `.github/workflows/skill-core.yml`; it runs Python policy-boundary tests plus `gradle :core:test` and `gradle :core:compileKotlin`. PR #2 remains open/Draft and `main` is unchanged.
