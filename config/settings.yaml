@@ -1,0 +1,42 @@
+# Configuration AETHRA
+version: "0.1.0"
+project: AETHRA
+phase: 0
+
+core:
+  runtime:
+    max_concurrent_tasks: 10
+    default_timeout_seconds: 300
+
+task:
+  max_retries: 3
+  default_timeout_seconds: 120
+
+policy:
+  default_risk_level: SAFE
+  require_approval_for: [SENSITIVE, DESTRUCTIVE]
+
+memory:
+  layers: [conversation, working, task, long_term, preference, device, skill, knowledge]
+  max_records_per_layer: 10000
+
+providers:
+  - opencode
+  - ollama
+  - openai
+  - anthropic
+  - gemini
+  - openrouter
+
+devices:
+  - localhost
+  - android
+  - windows
+
+ui:
+  mode: holographic
+  adaptive_effects: true
+
+voice:
+  enabled: false
+  wake_word: "AETHRA"

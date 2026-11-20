@@ -1,0 +1,17 @@
+{
+  "name": "AETHRA Demo",
+  "short_name": "AETHRA",
+  "description": "ÙˆØ§Ø¬Ù‡Ø© ØªØ¬Ø±ÙŠØ¨ÙŠØ© Ù„Ù†Ø¸Ø§Ù… AETHRA Ù„Ù„Ø°ÙƒØ§Ø¡ Ø§Ù„Ø§ØµØ·Ù†Ø§Ø¹ÙŠ Ø§Ù„Ø´Ø®ØµÙŠ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#3498db",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Crect width=%27100%27 height=%27100%27 fill=%27%233498db%27/%3E%3Ctext y=%27.85em%27 font-size=%2780%27 text-anchor=%27middle%27 fill=%27white%27%3E%3CðŸ¤–%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
