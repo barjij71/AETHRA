@@ -3,6 +3,7 @@ package org.aethra.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import org.aethra.core.orchestration.Artifact
 import org.aethra.core.orchestration.ArtifactStore
 import kotlinx.serialization.json.JsonObject
