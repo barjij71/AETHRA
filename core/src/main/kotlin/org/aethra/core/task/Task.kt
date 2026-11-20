@@ -41,6 +41,18 @@ class Task(
         get() = _executed.get()
         set(value) { _executed.set(value) }
 
+    // Phase 3: Execution Identity
+    // Task.id = stable logical task identity
+    // executionAttemptId = unique identity of ONE execution attempt
+    // attemptCounter = monotonically increasing execution-attempt generation
+    // retriesUsed = retry state inside current execution lifecycle
+    var executionAttemptId: String = UUID.randomUUID().toString()
+        private set
+    var attemptCounter: Int = 1
+        private set
+    var retriesUsed: Int = 0
+        private set
+
     /**
      * Atomically claims the one-shot execution cycle. Returns true for the
      * caller that owns the cycle; all racing duplicates observe false. This
@@ -86,6 +98,20 @@ class Task(
         _failed = false
         _cancelled = false
         note = ""
+        retriesUsed = 0
+    }
+
+    /** Start a new execution attempt (for process-death recovery). */
+    fun startNewExecutionAttempt() {
+        executionAttemptId = UUID.randomUUID().toString()
+        attemptCounter++
+        _executed.set(false)
+        _completed = false
+        _failed = false
+        _cancelled = false
+        note = ""
+        retriesUsed = 0
+        state = TaskState.QUEUED
     }
 
     fun isCancelled(): Boolean = _cancelled
@@ -116,7 +142,10 @@ class Task(
         persistedRetryBudget: Int,
         persistedTimeoutMs: Long,
         persistedBackoffMs: Long,
-        persistedExecuted: Boolean
+        persistedExecuted: Boolean,
+        persistedExecutionAttemptId: String? = null,
+        persistedAttemptCounter: Int = 1,
+        persistedRetriesUsed: Int = 0
     ) {
         id = persistedId
         createdAt = persistedCreatedAt
@@ -126,16 +155,16 @@ class Task(
         retryBudget = persistedRetryBudget
         timeoutMs = persistedTimeoutMs
         backoffMs = persistedBackoffMs
+        executionAttemptId = persistedExecutionAttemptId ?: UUID.randomUUID().toString()
+        attemptCounter = persistedAttemptCounter
+        retriesUsed = persistedRetriesUsed
 
         when (persistedState) {
             TaskState.RUNNING,
             TaskState.PREPARING,
             TaskState.APPROVED -> {
-                state = TaskState.QUEUED
-                _executed.set(false)
-                _completed = false
-                _failed = false
-                _cancelled = false
+                // Process-death recovery: in-flight states become new execution attempt
+                startNewExecutionAttempt()
             }
             else -> {
                 state = persistedState

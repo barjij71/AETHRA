@@ -67,7 +67,9 @@ class TaskEngine(
                     }
                 }
             } catch (t: Throwable) {
+                // Phase 3: Corrupt/incompatible data fails closed - don't start with partial state
                 restored.completeExceptionally(t)
+                throw t
             }
         }
     }
@@ -88,7 +90,7 @@ class TaskEngine(
             }
             tasks[task.id] = task
         }
-        persist()
+        scope.launch { persist() }
         registerDependents(task)
         // Tasks with dependencies are not auto-scheduled; they wait for dependencies
         // to be ready before transitioning to APPROVED. This avoids adding them
@@ -106,7 +108,7 @@ class TaskEngine(
                 TaskState.PREPARING, TaskState.WAITING_DEPENDENCY,
                 mapOf("blockedBy" to task.dependsOn.joinToString(","))
             ))
-            persist()
+            scope.launch { persist() }
         }
         return task
     }
@@ -120,7 +122,7 @@ class TaskEngine(
     private fun enqueue(task: Task) {
         if (task.state == TaskState.QUEUED) {
             pending.add(task.id)
-            persist()
+            scope.launch { persist() }
         }
     }
 
@@ -155,6 +157,64 @@ class TaskEngine(
         return TaskState.RUNNING
     }
 
+    // --- Phase 2: Execution boundary ---
+    // Called by WorkflowEngine to release a batch of prepared tasks for execution.
+    // This is the execution boundary - WorkflowEngine determines readiness,
+    // this method transitions ready tasks through the lifecycle and starts execution.
+    // Tasks not yet ready (deps incomplete) remain in WAITING_DEPENDENCY.
+    fun releasePreparedTasks(taskIds: List<String>) {
+        val toRelease = synchronized(lock) {
+            taskIds.mapNotNull { id -> tasks[id] }
+                .filter { task ->
+                    task.state in setOf(TaskState.WAITING_DEPENDENCY, TaskState.PREPARING, TaskState.QUEUED)
+                }
+        }
+        for (task in toRelease) {
+            // Re-check readiness under lock
+            synchronized(lock) {
+                if (task.state !in setOf(TaskState.WAITING_DEPENDENCY, TaskState.PREPARING, TaskState.QUEUED)) return@synchronized
+                if (task.dependsOn.isNotEmpty() && !TaskScheduler.isReady(task.dependsOn, { tasks[it] })) {
+                    // Not ready yet - keep in WAITING_DEPENDENCY
+                    if (task.state != TaskState.WAITING_DEPENDENCY) {
+                        transition(task, TaskState.WAITING_DEPENDENCY)
+                    }
+                    return@synchronized
+                }
+            }
+            // Ready - release it
+            wakeTaskById(task.id)
+        }
+    }
+
+    private fun wakeTaskById(taskId: String) {
+        val task = tasks[taskId] ?: return
+        if (task.state !in setOf(TaskState.WAITING_DEPENDENCY, TaskState.PREPARING, TaskState.QUEUED)) return
+
+        // Dependency completion must never bypass the same risk/approval gate
+        // used by normal task execution. A sensitive dependent becomes
+        // WAITING_APPROVAL instead of being auto-started by the wake-up path.
+        if (task.riskClass.level >= RiskClass.SENSITIVE.level) {
+            transition(task, TaskState.WAITING_APPROVAL)
+            scope.launch { persist() }
+            return
+        }
+
+        if (running.size >= maxConcurrent) {
+            transition(task, TaskState.APPROVED)
+            transition(task, TaskState.QUEUED)
+            enqueue(task)
+            return
+        }
+        transition(task, TaskState.APPROVED)
+        startTaskLocked(task, "dependency_ready")
+        eventBus.publish(TaskEvent(
+            "dependency_wake", System.currentTimeMillis(), task.id,
+            TaskState.WAITING_DEPENDENCY, TaskState.APPROVED,
+            mapOf("reason" to "dependency_ready")
+        ))
+        scope.launch { persist() }
+    }
+
     private fun drainQueue() {
         synchronized(lock) {
             while (running.size < maxConcurrent && pending.isNotEmpty()) {
@@ -179,7 +239,7 @@ class TaskEngine(
                 transition(task, TaskState.APPROVED)
                 startTaskLocked(task, "queue_available")
             }
-            persist()
+            scope.launch { persist() }
         }
     }
 
@@ -199,12 +259,12 @@ class TaskEngine(
         }
         if (task.riskClass.level >= RiskClass.SENSITIVE.level) {
             transition(task, TaskState.WAITING_APPROVAL)
-            persist()
+            scope.launch { persist() }
             return task.state
         }
         if (task.dependsOn.isNotEmpty() && !TaskScheduler.isReady(task.dependsOn, { tasks[it] })) {
             transition(task, TaskState.WAITING_DEPENDENCY)
-            persist()
+            scope.launch { persist() }
             return task.state
         }
 
@@ -217,7 +277,7 @@ class TaskEngine(
 
         transition(task, TaskState.APPROVED)
         val initiated = startTaskLocked(task, "started")
-        persist()
+        scope.launch { persist() }
         initiated
     }
 
@@ -263,7 +323,7 @@ class TaskEngine(
                 // WAITING_APPROVAL directly because APPROVED is the post-approval
                 // execution state and cannot transition back to an approval gate.
                 transition(task, TaskState.WAITING_APPROVAL)
-                persist()
+                scope.launch { persist() }
                 return
             }
 
@@ -280,7 +340,7 @@ class TaskEngine(
                 TaskState.WAITING_DEPENDENCY, TaskState.APPROVED,
                 mapOf("reason" to "dependency_ready")
             ))
-            persist()
+            scope.launch { persist() }
         }
     }
 
@@ -333,16 +393,14 @@ class TaskEngine(
 
             if (executionError == null) {
                 task.complete()
+                // Phase 3: Persist BEFORE publishing terminal event
+                persist()
                 eventBus.publish(TaskEvent(
                     "execution_completed", System.currentTimeMillis(), task.id,
                     TaskState.RUNNING, TaskState.COMPLETED,
                     mapOf("reason" to "success", "attempts" to (retriesUsed + 1).toString())
                 ))
                 onTaskTerminal(task.id)
-                // Terminal state must be durable at once; otherwise a process
-                // restart restores RUNNING, Task.restore() maps it back to
-                // QUEUED and an already-finished task executes again.
-                persist()
                 return
             }
 
@@ -353,6 +411,7 @@ class TaskEngine(
                 // attached (the UI would show a false [RUNNING] forever).
                 val wasTerminal = task.isTerminal()
                 if (!wasTerminal) task.cancel()
+                // Phase 3: Persist BEFORE publishing terminal event
                 persist()
                 if (!wasTerminal) {
                     eventBus.publish(TaskEvent(
@@ -393,6 +452,8 @@ class TaskEngine(
 
             task.fail(executionError.message ?: "execution error")
             val terminalEvent = if (timedOut) "execution_timeout" else "execution_failed"
+            // Phase 3: Persist BEFORE publishing terminal event
+            persist()
             eventBus.publish(TaskEvent(
                 terminalEvent, System.currentTimeMillis(), task.id,
                 TaskState.RUNNING, TaskState.FAILED,
@@ -402,9 +463,6 @@ class TaskEngine(
                 )
             ))
             onTaskTerminal(task.id)
-            // Terminal FAILED state must be durable for the same reason as COMPLETED
-            // (see above): restore() recovers RUNNING as a fresh QUEUED execution.
-            persist()
             return
         }
     }
@@ -417,17 +475,21 @@ class TaskEngine(
             val previous = task.state
             if (!granted) {
                 transition(task, TaskState.CANCELLED)
-                persist()
-                eventBus.publish(
-                    TaskEvent(
-                        "approval",
-                        System.currentTimeMillis(),
-                        task.id,
-                        previous,
-                        task.state,
-                        mapOf("granted" to "false", "reason" to reason)
+                // Phase 3: Persist BEFORE publishing terminal event (CANCELLED is terminal)
+                // Await persistence completion before publishing the terminal event.
+                scope.launch {
+                    persist()
+                    eventBus.publish(
+                        TaskEvent(
+                            "approval",
+                            System.currentTimeMillis(),
+                            task.id,
+                            previous,
+                            task.state,
+                            mapOf("granted" to "false", "reason" to reason)
+                        )
                     )
-                )
+                }
                 false
             } else {
                 transition(task, TaskState.APPROVED)
@@ -438,7 +500,7 @@ class TaskEngine(
                     transition(task, TaskState.QUEUED)
                     enqueue(task)
                 }
-                persist()
+                scope.launch { persist() }
                 eventBus.publish(
                     TaskEvent(
                         "approval",
@@ -457,36 +519,46 @@ class TaskEngine(
     }
 
     fun cancel(taskId: String) {
-        val wasRunning = synchronized(lock) {
-            val task = tasks[taskId] ?: return
-            if (task.state !in setOf(
-                    TaskState.RUNNING,
-                    TaskState.PAUSED,
-                    TaskState.WAITING_APPROVAL,
-                    TaskState.WAITING_DEPENDENCY,
-                    TaskState.QUEUED
-                )) {
-                return
+        // Phase 3: Persist BEFORE publishing terminal event (CANCELLED is terminal)
+        // Use runBlocking to await persistence completion before publishing the terminal event.
+        // This maintains backward compatibility for non-suspend callers while enforcing
+        // the correct persist-before-event ordering required by Phase 3-B contract.
+        runBlocking {
+            val cancelData = synchronized(lock) {
+                val task = tasks[taskId] ?: return@synchronized null
+                if (task.state !in setOf(
+                        TaskState.RUNNING,
+                        TaskState.PAUSED,
+                        TaskState.WAITING_APPROVAL,
+                        TaskState.WAITING_DEPENDENCY,
+                        TaskState.QUEUED
+                    )) {
+                    return@synchronized null
+                }
+
+                val previousState = task.state
+                val runningNow = previousState == TaskState.RUNNING
+                task.cancel()
+                pending.remove(taskId)
+                if (runningNow) {
+                    jobs[taskId]?.cancel()
+                    running.remove(taskId)
+                }
+                Triple(runningNow, previousState, taskId)
             }
 
-            val previousState = task.state
-            val runningNow = previousState == TaskState.RUNNING
-            task.cancel()
-            pending.remove(taskId)
-            if (runningNow) {
-                // Keep the job/running-slot update atomic with the task transition.
-                // The coroutine completion handler also takes this lock, so it can
-                // safely reconcile the slot after cancellation.
-                jobs[taskId]?.cancel()
-                running.remove(taskId)
+            if (cancelData != null) {
+                val (wasRunning, previousState, taskIdToCancel) = cancelData
+
+                // Phase 3: Persist BEFORE publishing terminal event (CANCELLED is terminal)
+                // Await persistence completion before publishing the terminal event.
+                persist()
+                eventBus.publish(TaskEvent("cancel", System.currentTimeMillis(), taskIdToCancel, previousState, TaskState.CANCELLED))
+
+                onTaskTerminal(taskIdToCancel)
+                if (wasRunning) drainQueue()
             }
-            persist()
-            eventBus.publish(TaskEvent("cancel", System.currentTimeMillis(), task.id, previousState, task.state))
-            runningNow
         }
-
-        onTaskTerminal(taskId)
-        if (wasRunning) drainQueue()
     }
 
     fun pause(taskId: String) {
@@ -498,7 +570,7 @@ class TaskEngine(
             jobs[taskId]?.cancel()
             jobs.remove(taskId)
             running.remove(taskId)
-            persist()
+            scope.launch { persist() }
             eventBus.publish(TaskEvent("pause", System.currentTimeMillis(), task.id, TaskState.RUNNING, TaskState.PAUSED))
         }
         drainQueue()
@@ -509,7 +581,7 @@ class TaskEngine(
             val task = tasks[taskId] ?: return
             if (task.state != TaskState.PAUSED) return
             transition(task, TaskState.QUEUED)
-            persist()
+            scope.launch { persist() }
             eventBus.publish(TaskEvent("resume", System.currentTimeMillis(), task.id, TaskState.PAUSED, TaskState.QUEUED))
         }
         run(taskId)
@@ -555,13 +627,10 @@ class TaskEngine(
         }
     }
 
-    private fun persist() {
-        scope.launch {
-            restored.await()
-            persistenceMutex.withLock {
-                persistence.saveAll(allTasks())
-            }
-        }
+    /** Persist all tasks and await completion. Returns when durability is confirmed. */
+    private suspend fun persist(): Unit = persistenceMutex.withLock {
+        restored.await()
+        persistence.saveAll(allTasks())
     }
 
     fun close() {

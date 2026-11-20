@@ -22,6 +22,14 @@ interface Storage {
     suspend fun clear()
 }
 
+/** Base exception for storage failures. */
+open class StorageException(message: String, cause: Throwable? = null) : Exception(message, cause) {
+    class Corrupt(message: String, cause: Throwable? = null) : StorageException(message, cause)
+    class Incompatible(message: String, cause: Throwable? = null) : StorageException(message, cause)
+    class Partial(message: String, cause: Throwable? = null) : StorageException(message, cause)
+    class IoFailure(message: String, cause: Throwable? = null) : StorageException(message, cause)
+}
+
 data class KVStorageConfig(
     val file: String,
     val encrypt: Boolean = false,
@@ -82,7 +90,14 @@ class KVStore(private val file: File) : Storage {
                     val text = file.readText()
                     if (text.isBlank()) emptyMap() else json.decodeFromString<Map<String, String>>(text)
                 } catch (e: Exception) {
-                    emptyMap() // unreadable/corrupt file: start fresh, do not crash
+                    // Check if it's a JSON decoding error by examining the exception message
+                    val msg = e.message?.lowercase() ?: ""
+                    val isCorrupt = msg.contains("json") || msg.contains("decode") || msg.contains("parse") || msg.contains("syntax")
+                    if (isCorrupt) {
+                        throw StorageException.Corrupt("Failed to decode storage file: ${e.message ?: "unknown error"}", e)
+                    } else {
+                        throw StorageException.IoFailure("Failed to read storage file: ${e.message ?: "unknown error"}", e)
+                    }
                 }
             } else emptyMap()
             map = loadedMap
@@ -99,7 +114,7 @@ class KVStore(private val file: File) : Storage {
                 file.parentFile?.mkdirs()
                 file.writeText(json.encodeToString<Map<String, String>>(changed))
             } catch (e: Exception) {
-                // persist failure must never kill the owning task; write the error to the session log
+                throw StorageException.IoFailure("Failed to write storage file: ${e.message}", e)
             }
         }
     }

@@ -11,6 +11,7 @@ import org.aethra.core.storage.Storage
 import org.aethra.core.task.Task
 import org.aethra.core.task.TaskEngine
 import org.aethra.core.task.TaskRunner
+import org.aethra.core.task.PersistenceException
 
 class WorkflowEngine(
     private val storage: org.aethra.core.storage.Storage,
@@ -20,14 +21,62 @@ class WorkflowEngine(
 ) {
     private val workflows = HashMap<String, Workflow>()
     private val workflowTaskIds = HashMap<String, Map<String, String>>()
+    private val releasedTaskIds = HashMap<String, MutableSet<String>>() // workflowId -> Set<taskId>
     private val lock = Any()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val workflowPersistence = WorkflowPersistence(storage)
     private val persistenceMutex = Mutex()
     private val recoveryDeferred = CompletableDeferred<Unit>()
 
+    // Terminal event sources that trigger dependent release
+    private val terminalSources = setOf(
+        "execution_completed",
+        "execution_failed",
+        "execution_cancelled",
+        "execution_timeout"
+    )
+
     init {
         recoverWorkflows()
+        subscribeToTaskEvents()
+    }
+
+    /** Subscribe to TaskEvent terminal sources for completion-driven progress. */
+    private fun subscribeToTaskEvents() {
+        // Synchronous subscription to ensure it's active before any execution
+        eventBus.subscribe(TaskEvent::class.java) { event ->
+            if (event.source in terminalSources) {
+                onTaskTerminal(event.taskId, event.source)
+            }
+        }
+    }
+
+    /** Handle terminal task event from TaskEngine. */
+    private fun onTaskTerminal(taskId: String, eventSource: String) {
+        // Find which workflow this task belongs to
+        val workflowId = findWorkflowForTask(taskId) ?: return
+
+        // For failed/cancelled/timeout dependencies: do NOT release dependents
+        // They remain WAITING_DEPENDENCY in TaskEngine (enforced by TaskScheduler.isReady)
+        // Only COMPLETED dependencies allow dependents to proceed
+        val isCompleted = eventSource == "execution_completed"
+
+        if (!isCompleted) {
+            // Dependency failed/cancelled/timed out - dependents stay blocked
+            // TaskEngine's wakeReadyDependents will check isReady and find deps not COMPLETED
+            return
+        }
+
+        // Dependency completed - release newly ready nodes
+        releaseReadyNodes(workflowId)
+    }
+
+    /** Find workflow ID that owns the given task ID. */
+    private fun findWorkflowForTask(taskId: String): String? {
+        for ((wfId, nodeToTaskId) in workflowTaskIds) {
+            if (taskId in nodeToTaskId.values) return wfId
+        }
+        return null
     }
 
     internal suspend fun awaitRecovery() {
@@ -144,6 +193,8 @@ class WorkflowEngine(
     }
 
     suspend fun execute(workflowId: String): Boolean {
+        awaitRecovery()
+
         var workflow: Workflow? = null
         val nodeToTaskId = mutableMapOf<String, String>()
         synchronized(lock) {
@@ -161,6 +212,7 @@ class WorkflowEngine(
                 nodeToTaskId[node.id] = task.id
             }
             workflowTaskIds[workflowId] = nodeToTaskId.toMap()
+            releasedTaskIds[workflowId] = mutableSetOf()
         }
 
         val workflowToPersist = workflow!!
@@ -171,12 +223,8 @@ class WorkflowEngine(
             TaskState.QUEUED, TaskState.RUNNING
         ))
 
-        for (node in workflowToPersist.nodes) {
-            val taskId = nodeToTaskId[node.id]!!
-            val task = taskEngine.getTask(taskId)
-            if (task?.state == TaskState.CANCELLED) continue
-            taskEngine.run(taskId)
-        }
+        // Release initial ready nodes (those with no dependencies)
+        releaseReadyNodes(workflowId)
 
         scope.launch {
             monitorWorkflow(workflowId)
@@ -184,6 +232,72 @@ class WorkflowEngine(
 
         return true
     }
+
+    /** Release all currently-ready nodes for a workflow. */
+    private fun releaseReadyNodes(workflowId: String) {
+        val lock = getOrCreateLock(workflowId)
+
+        synchronized(lock) {
+            val workflow = workflows[workflowId] ?: return
+            val nodeToTaskId = workflowTaskIds[workflowId] ?: return
+            val released = releasedTaskIds[workflowId] ?: return
+
+            // Get ready node IDs in deterministic order (topological rank, then nodeId)
+            val readyNodeIds = getReadyNodes(workflow, nodeToTaskId, released)
+                .sortedBy { it } // deterministic tie-break by nodeId
+                .toList()
+
+            if (readyNodeIds.isEmpty()) return
+
+            val readyTaskIds = readyNodeIds.map { nodeToTaskId[it]!! }
+            released.addAll(readyTaskIds)
+
+            // Release via TaskEngine - this transitions tasks to QUEUED/APPROVED and starts execution
+            readyTaskIds.forEach { taskEngine.releasePreparedTasks(listOf(it)) }
+        }
+    }
+
+    /** Get node IDs that are ready to be released (all deps COMPLETED, not yet released). */
+    private fun getReadyNodes(
+        workflow: Workflow,
+        nodeToTaskId: Map<String, String>,
+        released: Set<String>
+    ): List<String> {
+        val ready = mutableListOf<String>()
+
+        for (node in workflow.nodes) {
+            val taskId = nodeToTaskId[node.id] ?: continue
+            if (released.contains(taskId)) continue
+
+            var allDepsCompleted = true
+            for (depNodeId in node.dependsOn) {
+                val depTaskId = nodeToTaskId[depNodeId]
+                if (depTaskId == null) {
+                    allDepsCompleted = false
+                    break
+                }
+                val depTask = taskEngine.getTask(depTaskId)
+                if (depTask?.state != TaskState.COMPLETED) {
+                    allDepsCompleted = false
+                    break
+                }
+            }
+
+            if (allDepsCompleted) {
+                ready.add(node.id)
+            }
+        }
+
+        return ready
+    }
+
+    /** Get or create a per-workflow lock. */
+    private fun getOrCreateLock(workflowId: String): Mutex {
+        return workflowLocks.computeIfAbsent(workflowId) { Mutex() }
+    }
+
+    // Per-workflow locks for fine-grained concurrency
+    private val workflowLocks = HashMap<String, Mutex>()
 
     fun getWorkflow(workflowId: String): Workflow? {
         synchronized(lock) {
@@ -225,13 +339,13 @@ class WorkflowEngine(
 
     private suspend fun monitorWorkflow(workflowId: String) {
         while (true) {
-            delay(200)
+            delay(50)
             val result = synchronized(lock) {
-                val workflow = workflows[workflowId] ?: return
-                if (workflow.state != TaskState.RUNNING) return
+                val workflow = workflows[workflowId] ?: return@synchronized null
+                if (workflow.state != TaskState.RUNNING) return@synchronized null
                 val nodes = workflow.nodes
                 val taskIdMap = workflowTaskIds[workflowId]
-                if (taskIdMap == null) return
+                if (taskIdMap == null) return@synchronized null
 
                 val allTerminal = nodes.all { node ->
                     val taskId = taskIdMap[node.id]
@@ -254,7 +368,7 @@ class WorkflowEngine(
                 }
 
                 if (!allTerminal && !hasFailedDependency) {
-                    return
+                    return@synchronized null
                 }
 
                 val hasFailed = nodes.any { node ->
@@ -307,7 +421,13 @@ class WorkflowEngine(
                 }
 
                 for (persisted in persistedWorkflows) {
-                    val workflow = reconcileWorkflow(persisted)
+                    // Skip invalid workflows (validation failures) instead of failing recovery
+                    val workflow = try {
+                        reconcileWorkflow(persisted)
+                    } catch (e: IllegalArgumentException) {
+                        // Invalid graph (duplicate IDs, cycles, missing deps) - skip this workflow
+                        null
+                    }
                     if (workflow == null) continue
                     synchronized(lock) {
                         if (workflows.containsKey(workflow.id)) continue
@@ -316,18 +436,49 @@ class WorkflowEngine(
                             .mapNotNull { node -> node.actualTaskId?.let { taskId -> node.id to taskId } }
                             .toMap()
                         workflowTaskIds[workflow.id] = taskIdMap
+
+                        // Rebuild released task IDs from actual task states
+                        val released = mutableSetOf<String>()
+                        for (node in persisted.nodes) {
+                            node.actualTaskId?.let { taskId ->
+                                val task = taskEngine.getTask(taskId)
+                                if (task != null && task.state in setOf(TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.ERROR)) {
+                                    released.add(taskId)
+                                }
+                            }
+                        }
+                        releasedTaskIds[workflow.id] = released
                     }
                     if (workflow.state == TaskState.RUNNING) {
+                        // Release ready-but-unreleased nodes after recovery
+                        releaseReadyNodes(workflow.id)
                         scope.launch {
                             monitorWorkflow(workflow.id)
                         }
                     }
                 }
-            } catch (e: Exception) {
-            } finally {
+            } catch (e: PersistenceException) {
+                // Phase 3: Fail closed on corrupt/incompatible data - propagate to caller
                 try {
-                    recoveryDeferred.complete(Unit)
-                } catch (e: IllegalStateException) {
+                    recoveryDeferred.completeExceptionally(e)
+                } catch (ex: IllegalStateException) {
+                    // Already completed by another path - ignore, still propagate original error
+                }
+                throw e
+            } catch (e: Exception) {
+                // Other unexpected errors - also fail closed
+                try {
+                    recoveryDeferred.completeExceptionally(e)
+                } catch (ex: IllegalStateException) {
+                    // Already completed by another path - ignore, still propagate original error
+                }
+                throw e
+            } finally {
+                if (!recoveryDeferred.isCompleted) {
+                    try {
+                        recoveryDeferred.complete(Unit)
+                    } catch (e: IllegalStateException) {
+                    }
                 }
             }
         }

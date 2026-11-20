@@ -5,6 +5,8 @@ import kotlinx.serialization.json.Json
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.domain.TaskState
 import org.aethra.core.storage.Storage
+import org.aethra.core.storage.StorageException
+import org.aethra.core.task.PersistenceException
 
 /**
  * Durable workflow journal backed by the platform Storage abstraction.
@@ -32,16 +34,28 @@ class WorkflowPersistence(private val storage: Storage) {
     }
 
     /**
-     * Load all persisted workflows from storage. Returns an empty list if
-     * no workflows have been persisted or if the stored data is corrupt.
+     * Load all persisted workflows from storage.
+     * Throws PersistenceException on corrupt/incompatible data (fail closed).
+     * Returns empty list only for legitimately empty storage (EMPTY).
      */
     suspend fun loadAll(): List<PersistedWorkflow> {
         val encoded = storage.getString(journalKey) ?: return emptyList()
         if (encoded.isBlank()) return emptyList()
 
-        return runCatching {
+        return try {
             json.decodeFromString<List<PersistedWorkflow>>(encoded)
-        }.getOrElse { emptyList() }
+        } catch (e: StorageException.Corrupt) {
+            throw PersistenceException.Corrupt("Workflow journal corrupt: ${e.message}", e)
+        } catch (e: StorageException.Incompatible) {
+            throw PersistenceException.Incompatible("Workflow journal incompatible: ${e.message}", e)
+        } catch (e: StorageException.Partial) {
+            throw PersistenceException.Partial("Workflow journal partial: ${e.message}", e)
+        } catch (e: StorageException.IoFailure) {
+            throw PersistenceException.IoFailure("Workflow journal I/O failure: ${e.message}", e)
+        } catch (e: Exception) {
+            // Phase 3: Fail closed on CORRUPT/PARTIAL/INCOMPATIBLE data
+            throw PersistenceException.Corrupt("Failed to load workflow journal: ${e.message}", e)
+        }
     }
 }
 

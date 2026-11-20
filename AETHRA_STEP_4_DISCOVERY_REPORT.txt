@@ -1,0 +1,346 @@
+AETHRA — STEP 4 DISCOVERY REPORT
+================================================================================
+
+DATE: 2026-11-18
+WORKSPACE: /data/workspace/AETHRA-worktrees/opencode
+HEAD: e136688804957adfb18b5cfee0f29e2ae30772e7 (detached)
+BRANCH: fix/w1-full-repair-worktree
+
+================================================================================
+1. EXISTING WORKFLOW MODEL
+================================================================================
+
+## Workflow.kt
+- WorkflowNode: id, taskId, goal, role, riskClass, dependsOn, state
+- Workflow: id, name, nodes, state, createdAt, completedAt, attemptCounter, executionAttemptId
+
+## WorkflowEngine.kt
+- Coordinates workflows through TaskEngine
+- Has prepare/releasePreparedTasks contract with TaskEngine
+- Has recovery mechanism via recoverWorkflows()
+- Has monitorWorkflow for terminal state detection
+
+## WorkflowPersistence.kt
+- Persists workflow definitions, node metadata, state, node-to-task mapping
+- Schema versioning with CURRENT_SCHEMA_VERSION = 1
+- Migration framework in place
+
+## WorkflowEngine.execute()
+- Validates workflow graph (DAG validation)
+- Generates executionAttemptId
+- Persists workflow intent
+- Prepares tasks via TaskEngine.prepare()
+- Persists workflow with taskIdMap
+- Releases tasks via taskEngine.releasePreparedTasks()
+- Starts tasks via taskEngine.run()
+- Monitors workflow via monitorWorkflow()
+
+## Recovery Behavior
+- recoverWorkflows() called on init
+- Recovers workflows from persistence
+- Reconstructs taskIdMap
+- If RUNNING state, releases prepared tasks and restarts monitoring
+
+================================================================================
+2. EXISTING DEPENDENCY REPRESENTATION
+================================================================================
+
+## WorkflowNode.dependsOn: List<String>
+- References node IDs within the same workflow
+- Validation in validateWorkflowGraph()
+
+## TaskScheduler.kt
+- isReady(): returns true only when ALL dependencies are COMPLETED
+- schedule(): topological sort using Kahn's algorithm
+- wouldCreateCycle(): cycle detection using DFS
+
+## TaskScheduler.isReady()
+- Returns true ONLY when ALL dependencies are COMPLETED
+- FAILED, CANCELLED, ERROR dependencies do NOT make dependent runnable
+
+## TaskScheduler.wouldCreateCycle()
+- Uses DFS with visiting/visited sets
+- Checks if adding an edge would create a cycle
+
+## TaskScheduler.schedule()
+- Kahn's algorithm for topological sort
+- Preserves original relative order for unrelated tasks
+
+## TaskEngine.wakeReadyDependents()
+- Called when a task reaches terminal state
+- Only wakes tasks in WAITING_DEPENDENCY state
+- Checks TaskScheduler.isReady() on all dependencies
+- Only wakes when ALL dependencies are COMPLETED
+- Respects maxConcurrent limit
+
+## TaskEngine.handleFailedDependency()
+- No-op: dependents stay blocked in WAITING_DEPENDENCY
+- wakeReadyDependents() only wakes when ALL dependencies are COMPLETED
+- If dependency is retried and succeeds, dependent will wake normally
+
+================================================================================
+3. EXISTING DEPENDENCY READINESS BEHAVIOR
+================================================================================
+
+## Current Behavior
+- A task becomes ready ONLY when ALL dependencies are COMPLETED
+- FAILED, CANCELLED, ERROR dependencies do NOT make dependent runnable
+- Dependent stays in WAITING_DEPENDENCY until dependency is retried and succeeds
+- This is the correct behavior per W1 invariants
+
+## TaskEngine.wakeReadyDependents()
+- Only wakes tasks in WAITING_DEPENDENCY state
+- Checks TaskScheduler.isReady() on all dependencies
+- Only wakes when ALL dependencies are COMPLETED
+- Respects maxConcurrent limit
+
+## TaskEngine.prepare()
+- Creates task with dependsOn list
+- Validates dependencies exist in TaskEngine
+- Validates no cycle would be created
+- Marks task as PREPARED
+- Persists immediately
+
+## TaskEngine.releasePreparedTasks()
+- Marks tasks as released
+- Transitions from PREPARING/WAITING_DEPENDENCY to QUEUED
+- Calls run() on each task
+
+## TaskEngine.run()
+- Idempotent: returns current state if already RUNNING/APPROVED
+- Handles dependency checking
+- Respects maxConcurrent limit
+- Starts task via startTaskLocked()
+
+## TaskEngine.drainQueue()
+- Picks tasks from pending queue up to maxConcurrent
+- Checks dependencies before starting
+- Respects risk class approval gates
+
+================================================================================
+4. EXISTING TASKENGINE PREPARE/RELEASE CONTRACT
+================================================================================
+
+## TaskEngine.prepare()
+- Creates task with dependsOn list
+- Validates dependencies exist in TaskEngine
+- Validates no cycle would be created
+- Marks task as PREPARED
+- Persists immediately
+
+## TaskEngine.releasePreparedTasks()
+- Marks tasks as released
+- Transitions from PREPARING/WAITING_DEPENDENCY to QUEUED
+- Persists
+- Calls run() on each task
+
+## TaskEngine.run()
+- Idempotent: returns current state if already RUNNING/APPROVED
+- Checks if task is EXECUTED or COMPLETED
+- Transitions QUEUED/PREPARING → PREPARING
+- Checks risk class → WAITING_APPROVAL if SENSITIVE+
+- Checks dependencies → WAITING_DEPENDENCY if not ready
+- If maxConcurrent reached → APPROVED → QUEUED
+- Otherwise → APPROVED → startTaskLocked()
+
+## TaskEngine.prepare() for workflows
+- Creates task with workflowId and executionAttemptId
+- Marks as PREPARED
+- Sets creationContext = "workflow_prepared"
+- Does NOT enqueue or start execution
+
+## TaskEngine.releasePreparedTasks()
+- Marks tasks as released
+- Transitions PREPARING/WAITING_DEPENDENCY → QUEUED
+- Calls run() on each task
+
+================================================================================
+5. EXISTING WORKFLOW TERMINAL-STATE EVALUATION
+================================================================================
+
+## WorkflowEngine.monitorWorkflow()
+- Runs in coroutine, polls every 200ms
+- Checks if all nodes are terminal
+- Checks for failed dependencies
+- Determines final workflow state:
+  - COMPLETED: all nodes terminal, no failures
+  - FAILED: any node FAILED/ERROR, or failed dependency
+- Persists final state
+- Publishes workflow_completed/workflow_failed event
+
+## Terminal States Checked
+- TaskState.COMPLETED
+- TaskState.FAILED
+- TaskState.CANCELLED
+- TaskState.ERROR
+- TaskState.OUTCOME_UNKNOWN
+
+## Failure Detection
+- hasFailed: any node FAILED or ERROR
+- hasFailedDependency: any node has dependency that FAILED or ERROR
+- Final state: FAILED if hasFailed OR hasFailedDependency, else COMPLETED
+
+================================================================================
+5. EXISTING CANCELLATION BEHAVIOR
+================================================================================
+
+## WorkflowEngine.cancel()
+- Sets workflow state to CANCELLED
+- Cancels all tasks via taskEngine.cancel()
+- Persists workflow
+- Publishes workflow_cancelled event
+
+## TaskEngine.cancel()
+- Cancels task if in RUNNING, PAUSED, WAITING_APPROVAL, WAITING_DEPENDENCY, QUEUED
+- Cancels running job
+- Removes from running/pending
+- Persists
+- Calls onTaskTerminal() which calls wakeReadyDependents()
+
+## TaskEngine.cancel() - Important
+- Does NOT cascade cancellation to dependents
+- Dependents stay in WAITING_DEPENDENCY
+- Dependent can be unblocked if cancelled task is retried and succeeds
+
+================================================================================
+6. EXISTING FAILURE POLICY FIELDS AND SEMANTICS
+================================================================================
+
+## Current State
+- No explicit failure policy fields in Workflow or WorkflowNode
+- Behavior is hardcoded in monitorWorkflow():
+  - Any node FAILED/ERROR → workflow FAILED
+  - Failed dependency blocks dependent → workflow FAILED
+  - No continueOnFailure or failFast semantics
+
+## Missing Functionality
+- No continueOnFailure field
+- No failFast field
+- No explicit failure policy configuration
+
+================================================================================
+7. EXISTING RECOVERY BEHAVIOR
+================================================================================
+
+## WorkflowEngine.recoverWorkflows()
+- Called on init via scope.launch
+- Awaits taskEngine.awaitRestored()
+- Loads all persisted workflows
+- For each persisted workflow:
+  - Reconciles via reconcileWorkflow()
+  - Validates graph structure
+  - Reconciles taskIdMap with TaskEngine
+  - If RUNNING: releases prepared tasks, restarts monitoring
+
+## Recovery Behavior
+- Reuses executionAttemptId if already set (recovery)
+- Increments attemptCounter only on fresh execute()
+- Reconstructs tasks via taskEngine.prepare()
+- If RUNNING: calls releasePreparedTasks() and restarts monitoring
+- Does NOT increment attemptCounter during recovery
+
+## Recovery Idempotency
+- Multiple recoveries produce same result
+- No duplicate workflows in storage
+- executionAttemptId preserved
+
+## Recovery Validation
+- Validates graph structure (no cycles, no duplicate IDs, etc.)
+- Validates actualTaskId exists in TaskEngine
+- Fails recovery if validation fails (returns null)
+
+================================================================================
+8. MISSING FUNCTIONALITY (STEP 4 REQUIREMENTS)
+================================================================================
+
+## Phase 1 - DAG Validation ✅ IMPLEMENTED
+- Enhanced validation in createWorkflow() (no cycles, unique IDs, valid deps)
+- Added: Structured ValidationResult with detailed errors
+- Added: Explicit validation for maxConcurrentTasks (pending)
+- Added: Invalid failure policy configuration validation (pending)
+- Added: Duplicate dependency edge detection ✅
+
+## Phase 2 - Topological Scheduling
+- Current: topologicalSort() exists but not used for scheduling decisions
+- Missing: Explicit scheduling decisions based on topological order
+- Missing: Deterministic tie-breaking rule documentation
+
+## Phase 3 - maxConcurrency
+- TaskEngine has maxConcurrent but WorkflowEngine doesn't use it for workflow-level concurrency
+- WorkflowEngine passes maxConcurrent to TaskEngine but doesn't enforce workflow-level limit
+- Missing: Workflow-level concurrency permits
+
+## Phase 3 - Cancellation Propagation
+- WorkflowEngine.cancel() cancels all tasks
+- No explicit handling of "cancellation before task release"
+- Missing: Cancellation during persistence races
+
+## Phase 4 - Failure Policies
+- Missing: continueOnFailure field
+- Missing: failFast field
+- Hardcoded behavior in monitorWorkflow()
+
+## Phase 5 - Recovery Idempotency
+- Current recovery is idempotent but could use more explicit tests
+
+## Phase 6 - Persistence and Event Ordering
+- Current: persistWorkflow() then publish event
+- Need to verify ordering for all transitions
+
+================================================================================
+9. W1 CONSTRAINTS TO PRESERVE
+================================================================================
+
+1. Durable execution intent before task creation (invariant #4)
+2. Recovery after intent persistence before first Task (invariant #6)
+3. executionAttemptId uniqueness (invariant #10)
+4. Safe shutdown drain (invariant #12)
+5. Corrupt persistence handling (invariant #13)
+6. Schema/version compatibility (invariant #14)
+7. Storage identity ownership (invariant #15)
+
+Key W1 Contracts to Preserve:
+- Durable execution intent before task creation
+- executionAttemptId uniqueness
+- Recovery after intent persistence before first Task
+- Safe shutdown drain
+- Corrupt persistence handling
+- Schema/version compatibility
+- Storage identity ownership
+- TaskEngine.prepare() / releasePreparedTasks() as sole release authority
+- Prepared tasks remain unreleased until durable release
+- Persistence failure prevents task creation/release where required
+- OUTCOME_UNKNOWN semantics
+- Safe shutdown drain
+- Corruption detection
+- Storage identity ownership
+
+================================================================================
+10. FILES MODIFIED BY W1
+================================================================================
+
+Modified source files:
+- core/src/main/kotlin/org/aethra/core/domain/models.kt
+- core/src/main/kotlin/org/aethra/core/runtime/Lifecycle.kt
+- core/src/main/kotlin/org/aethra/core/task/Task.kt
+- core/src/main/kotlin/org/aethra/core/task/TaskEngine.kt
+- core/src/main/kotlin/org/aethra/core/task/TaskPersistence.kt
+- core/src/main/kotlin/org/aethra/core/workflow/Workflow.kt
+- core/src/main/kotlin/org/aethra/core/workflow/WorkflowEngine.kt
+- core/src/main/kotlin/org/aethra/core/workflow/WorkflowPersistence.kt
+
+Modified test files:
+- core/src/test/kotlin/org/aethra/core/task/TaskConcurrencyContractTest.kt
+- core/src/test/kotlin/org/aethra/core/task/TaskDependencyAdversarialTest.kt
+- core/src/test/kotlin/org/aethra/core/task/TaskEngineB1ContractTest.kt
+- core/src/test/kotlin/org/aethra/core/workflow/WorkflowEngineContractTest.kt
+
+Untracked files (reports):
+- AETHRA_W1_CLOSURE_VERIFICATION_REPORT.txt
+- AETHRA_W1_FINAL_CLOSURE_DECISION.txt
+- AETHRA_W1_FINAL_CLOSURE_REPORT.txt
+- AETHRA_W1_FINAL_EVIDENCE_GATE_REPORT.txt
+- AETHRA_W1_GATE_C_CLOSURE_REPORT.txt
+- AETHRA_W1_MANDATORY_DEFECT_REMEDIATION_REPORT.txt
+- AETHRA_STEP_4_DISCOVERY_REPORT.txt
+- AETHRA_STEP_4_PHASE1_SUMMARY.md
