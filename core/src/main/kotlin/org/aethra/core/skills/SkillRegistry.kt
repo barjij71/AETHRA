@@ -3,19 +3,15 @@ package org.aethra.core.skills
 import org.aethra.core.domain.RiskClass
 import kotlinx.serialization.Serializable
 import org.aethra.core.storage.Storage
-import java.util.UUID
 import kotlinx.coroutines.runBlocking
 
 /**
- * Registry of installed skills. Enforces:
- * - Duplicate ID rejection
- * - Platform filtering
- * - Capability lookup
- * - enable/disable semantics (disabled skills cannot execute)
- * - Persistence to [Storage]
+ * Core-owned registry of installed skills.
  *
- * No skill can execute by itself; execution goes through
- * [ToolRegistry] -> [ExecutionPolicy] -> [PermissionBroker] -> [AuditLog].
+ * Registration always starts UNTRUSTED and disabled. Trust is a separate
+ * internal state and must be granted by Core verification code. Manifest flags,
+ * imported instructions, or callers outside the Core module cannot self-enable
+ * a skill.
  */
 class SkillRegistry(private val storage: Storage) {
     private val skills = LinkedHashMap<String, Skill>()
@@ -25,11 +21,12 @@ class SkillRegistry(private val storage: Storage) {
         loadPersisted()
     }
 
-    /** Register a skill. Rejects duplicates. */
     fun register(skill: Skill): Boolean {
         synchronized(lock) {
             if (skills.containsKey(skill.id)) return false
             val merged = skill.copy(
+                enabled = false,
+                trustState = SkillTrustState.UNTRUSTED,
                 createdAt = skill.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )
@@ -39,46 +36,70 @@ class SkillRegistry(private val storage: Storage) {
         }
     }
 
-    /** Get a skill by ID. */
-    fun get(id: String): Skill? = skills[id]
+    fun get(id: String): Skill? = synchronized(lock) { skills[id] }
 
-    /** List all skills. */
-    fun all(): List<Skill> = skills.values.toList()
+    fun all(): List<Skill> = synchronized(lock) { skills.values.toList() }
 
-    /** Find a skill by name (case-insensitive). */
-    fun find(name: String): Skill? = all().find { it.name.equals(name, ignoreCase = true) }
+    fun find(name: String): Skill? =
+        all().find { it.name.equals(name, ignoreCase = true) }
 
-    /**
-     * Find skills that expose a specific capability.
-     */
     fun findByCapability(capability: String): List<Skill> {
         val lower = capability.lowercase()
         return all().filter { it.capabilities.any { it.lowercase() == lower } }
     }
 
-    /**
-     * Find skills for a target platform.
-     */
     fun findByPlatform(platform: String): List<Skill> {
         val lower = platform.lowercase()
-        return all().filter { it.platforms.isEmpty() || it.platforms.any { it.lowercase() == lower } }
+        return all().filter {
+            it.platforms.isEmpty() || it.platforms.any { it.lowercase() == lower }
+        }
     }
 
-    /** Enable or disable a skill. */
-    fun setEnabled(id: String, enabled: Boolean): Boolean {
+    fun enable(id: String): Boolean {
         synchronized(lock) {
-            val s = skills[id] ?: return false
-            val updated = s.copy(enabled = enabled, updatedAt = System.currentTimeMillis())
-            skills[id] = updated
+            val skill = skills[id] ?: return false
+            if (skill.trustState != SkillTrustState.TRUSTED) return false
+            if (!skill.state.isInstalled) return false
+            if (skill.enabled) return true
+            skills[id] = skill.copy(enabled = true, updatedAt = System.currentTimeMillis())
             persistState()
             return true
         }
     }
 
-    fun enable(id: String): Boolean = setEnabled(id, true)
-    fun disable(id: String): Boolean = setEnabled(id, false)
+    fun disable(id: String): Boolean {
+        synchronized(lock) {
+            val skill = skills[id] ?: return false
+            if (!skill.enabled) return true
+            skills[id] = skill.copy(enabled = false, updatedAt = System.currentTimeMillis())
+            persistState()
+            return true
+        }
+    }
 
-    /** Remove a skill by ID. Returns true if removed. */
+    /** Core-internal trust transition; external adapters cannot self-grant trust. */
+    internal fun setTrust(id: String, trustState: SkillTrustState): Boolean {
+        synchronized(lock) {
+            val skill = skills[id] ?: return false
+            val enabled = trustState == SkillTrustState.TRUSTED &&
+                skill.state.isInstalled &&
+                skill.enabled
+            skills[id] = skill.copy(
+                trustState = trustState,
+                enabled = enabled,
+                updatedAt = System.currentTimeMillis()
+            )
+            persistState()
+            return true
+        }
+    }
+
+    internal fun trust(id: String): Boolean =
+        setTrust(id, SkillTrustState.TRUSTED)
+
+    internal fun revokeTrust(id: String): Boolean =
+        setTrust(id, SkillTrustState.REVOKED)
+
     fun remove(id: String): Boolean {
         synchronized(lock) {
             if (!skills.containsKey(id)) return false
@@ -88,15 +109,16 @@ class SkillRegistry(private val storage: Storage) {
         }
     }
 
-    /** Total number of registered skills. */
-    val size: Int get() = skills.size
+    val size: Int
+        get() = synchronized(lock) { skills.size }
 
-    /** Highest risk class among enabled skills. */
-    val highestRisk: RiskClass get() = all().filtered().map { it.riskClass }.maxByOrNull { it.level } ?: RiskClass.READ_ONLY
+    val highestRisk: RiskClass
+        get() = all()
+            .filter { it.enabled && it.trustState == SkillTrustState.TRUSTED }
+            .map { it.riskClass }
+            .maxByOrNull { it.level }
+            ?: RiskClass.READ_ONLY
 
-    private fun List<Skill>.filtered() = filter { it.enabled }
-
-    /** Persist the state to storage. */
     private fun persistState() {
         val entries = all().map { skill ->
             SkillEntry(
@@ -113,61 +135,64 @@ class SkillRegistry(private val storage: Storage) {
                 riskClass = skill.riskClass,
                 integrity = skill.integrity,
                 enabled = skill.enabled,
+                trustState = skill.trustState,
                 state = skill.state,
                 createdAt = skill.createdAt,
                 updatedAt = skill.updatedAt
             )
         }
-        val raw = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.encodeToString(entries)
+        val raw = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            .encodeToString(entries)
         try {
-            runBlocking {
-                storage.setString("aethra.skills.v1", raw)
-            }
-        } catch (e: Exception) {
-            // persist failure must not crash the owning flow
+            runBlocking { storage.setString("aethra.skills.v1", raw) }
+        } catch (_: Exception) {
+            // Persistence failure is handled by the storage boundary.
         }
     }
 
-    /** Load persisted state from storage. */
     private fun loadPersisted() {
         try {
-        val raw: String? = runBlocking {
-            storage.getString("aethra.skills.v1")
-        }
-            if (raw == null || raw.length == 0) return
-            val entries = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<List<SkillEntry>>(raw)
-            for (e in entries) {
+            val raw = runBlocking { storage.getString("aethra.skills.v1") }
+                ?: return
+            if (raw.isBlank()) return
+
+            val entries = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                .decodeFromString<List<SkillEntry>>(raw)
+
+            for (entry in entries) {
+                val executable = entry.trustState == SkillTrustState.TRUSTED &&
+                    entry.enabled &&
+                    entry.state.isInstalled
+
                 val skill = Skill(
-                    id = e.id,
-                    name = e.name,
-                    version = e.version,
-                    source = e.source,
-                    description = e.description,
-                    entrypoints = e.entrypoints,
-                    capabilities = e.capabilities,
-                    requestedPermissions = e.requestedPermissions,
-                    dependencies = e.dependencies,
-                    platforms = e.platforms,
-                    riskClass = e.riskClass,
-                    integrity = e.integrity,
-                    enabled = e.enabled,
-                    state = e.state,
-                    createdAt = e.createdAt,
-                    updatedAt = e.updatedAt
+                    id = entry.id,
+                    name = entry.name,
+                    version = entry.version,
+                    source = entry.source,
+                    description = entry.description,
+                    entrypoints = entry.entrypoints,
+                    capabilities = entry.capabilities,
+                    requestedPermissions = entry.requestedPermissions,
+                    dependencies = entry.dependencies,
+                    platforms = entry.platforms,
+                    riskClass = entry.riskClass,
+                    integrity = entry.integrity,
+                    enabled = executable,
+                    trustState = entry.trustState,
+                    state = entry.state,
+                    createdAt = entry.createdAt,
+                    updatedAt = entry.updatedAt
                 )
                 synchronized(lock) {
                     skills[skill.id] = skill
                 }
             }
-        } catch (e: Exception) {
-            // corrupt/legacy data: start fresh
+        } catch (_: Exception) {
+            skills.clear()
         }
     }
 }
 
-/**
- * Dataclass wrapper used for persistence serialization.
- */
 @Serializable
 data class SkillEntry(
     val id: String,
@@ -182,7 +207,8 @@ data class SkillEntry(
     val platforms: List<String> = emptyList(),
     val riskClass: RiskClass = RiskClass.READ_ONLY,
     val integrity: IntegrityInfo? = null,
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
+    val trustState: SkillTrustState = SkillTrustState.UNTRUSTED,
     val state: SkillState = SkillState.DISCOVERED,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = createdAt
