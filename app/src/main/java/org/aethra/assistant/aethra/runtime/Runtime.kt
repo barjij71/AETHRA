@@ -42,7 +42,7 @@ class Runtime(private val context: Context) {
     private var adapters: PlatformAdapters? = null
     private var memoryHookActive = false
 
-    val platformAdapters: PlatformAdapters?
+    internal val platformAdapters: PlatformAdapters?
         get() = adapters
 
     fun build(): Runtime = this
@@ -78,6 +78,7 @@ class Runtime(private val context: Context) {
             adapters = platform
 
             platform.memoryAndroid.initialize()
+            platform.agentEngine.load()
             platform.registerBuiltInSkills()
             attachMemoryHook()
 
@@ -153,7 +154,7 @@ class Runtime(private val context: Context) {
         }
     }
 
-    val registryOrNull: CoreRegistry?
+    internal val registryOrNull: CoreRegistry?
         get() = registry
     val config: CoreConfig?
         get() = registry?.config
@@ -173,7 +174,7 @@ class Runtime(private val context: Context) {
         get() = registry?.eventBus
     val auditLog: AuditLog?
         get() = registry?.auditLog
-    val permissionBroker: PermissionBroker?
+    internal val permissionBroker: PermissionBroker?
         get() = registry?.permissionBroker
     val lifecycle: Lifecycle?
         get() = registry?.lifecycle

@@ -364,7 +364,6 @@ class TaskEngine(
         // resume or explicit retry can start a clean cycle.
         if (!task.claimExecution()) return
 
-        var retriesUsed = 0
         var nextBackoffMs = task.backoffMs.coerceAtLeast(0L)
 
         while (true) {
@@ -398,7 +397,7 @@ class TaskEngine(
                 eventBus.publish(TaskEvent(
                     "execution_completed", System.currentTimeMillis(), task.id,
                     TaskState.RUNNING, TaskState.COMPLETED,
-                    mapOf("reason" to "success", "attempts" to (retriesUsed + 1).toString())
+                    mapOf("reason" to "success", "attempts" to (task.retriesUsed + 1).toString())
                 ))
                 onTaskTerminal(task.id)
                 return
@@ -426,15 +425,15 @@ class TaskEngine(
 
             // Timeouts and cancellations are deliberately not retried. Ordinary
             // provider failures consume the task's configured retry budget.
-            if (!timedOut && retriesUsed < task.retryBudget.coerceAtLeast(0)) {
-                retriesUsed++
+            if (!timedOut && task.retriesUsed < task.retryBudget.coerceAtLeast(0)) {
+                val retryCount = task.recordRetry()
                 val waitMs = nextBackoffMs.coerceAtMost(30_000L)
                 eventBus.publish(TaskEvent(
                     "retry_scheduled", System.currentTimeMillis(), task.id,
                     TaskState.RUNNING, TaskState.RUNNING,
                     mapOf(
-                        "attempt" to (retriesUsed + 1).toString(),
-                        "retry" to retriesUsed.toString(),
+                        "attempt" to (retryCount + 1).toString(),
+                        "retry" to retryCount.toString(),
                         "delay_ms" to waitMs.toString(),
                         "reason" to (executionError.message ?: "provider error")
                     )
@@ -459,7 +458,7 @@ class TaskEngine(
                 TaskState.RUNNING, TaskState.FAILED,
                 mapOf(
                     "reason" to if (timedOut) "execution timeout" else "provider error",
-                    "attempts" to (retriesUsed + 1).toString()
+                    "attempts" to (task.retriesUsed + 1).toString()
                 )
             ))
             onTaskTerminal(task.id)
@@ -474,7 +473,8 @@ class TaskEngine(
 
             val previous = task.state
             if (!granted) {
-                transition(task, TaskState.CANCELLED)
+                task.updateState(TaskState.CANCELLED)
+                task.cancel()
                 // Phase 3: Persist BEFORE publishing terminal event (CANCELLED is terminal)
                 // Await persistence completion before publishing the terminal event.
                 scope.launch {

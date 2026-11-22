@@ -26,9 +26,21 @@ class ToolRegistry {
         }
     }
 
-    /** Register a tool. Duplicate IDs override older entries. */
+    /**
+     * Register a tool. Re-registering an ID may replace descriptive metadata,
+     * but can only retain or tighten its risk, approval and capability scope.
+     */
     fun register(tool: Tool) {
-        tools[tool.id] = tool
+        val existing = tools[tool.id]
+        if (existing == null) {
+            tools[tool.id] = tool
+            return
+        }
+        tools[tool.id] = tool.copy(
+            requiredCapabilities = (existing.requiredCapabilities + tool.requiredCapabilities).distinct(),
+            riskClass = if (existing.riskClass.level >= tool.riskClass.level) existing.riskClass else tool.riskClass,
+            approvalRequired = existing.approvalRequired || tool.approvalRequired
+        )
     }
 
     /** Get a tool by ID. */

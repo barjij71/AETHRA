@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.aethra.assistant.aethra.memory.MemoryAndroid
+import org.aethra.assistant.aethra.permissions.AndroidApprovalSurface
 import org.aethra.assistant.aethra.security.ExecutionPolicy
 import org.aethra.assistant.aethra.security.PolicyEngine
 import org.aethra.assistant.aethra.skills.SkillRegistryAndroid
@@ -16,6 +17,7 @@ import org.aethra.assistant.aethra.tools.AppQueryTool
 import org.aethra.assistant.aethra.tools.DeviceInfoTool
 import org.aethra.assistant.aethra.tools.FileReadTool
 import org.aethra.core.agents.AgentEngine
+import org.aethra.core.agents.AgentPersistence
 import org.aethra.core.memory.MemoryEngine
 import org.aethra.core.providers.ModelRegistry
 import org.aethra.core.providers.ProviderModelRouter
@@ -27,7 +29,6 @@ import org.aethra.core.runtime.LifecycleImpl
 import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
-import org.aethra.core.domain.AuditEntry
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.storage.Storage
 import org.aethra.core.task.Task
@@ -91,15 +92,18 @@ class PlatformAdapters(private val context: Context) {
     val toolRegistry = ToolRegistry()
     val providerSystem = ProviderSystem()
     val skillRegistry = SkillRegistry(storage)
-    val agentEngine = AgentEngine()
+    val agentEngine = AgentEngine(AgentPersistence(storage))
     val auditLog = AuditLog(storage)
-    val permissionBroker = PermissionBroker(auditLog)
+    internal val permissionBroker = PermissionBroker(auditLog)
     val providerRegistry = ProviderRegistry(storage, auditLog)
     val modelRegistry = ModelRegistry(storage, auditLog)
     val providerModelRouter = ProviderModelRouter(providerRegistry, modelRegistry)
 
     val taskRunner: TaskRunner = AndroidTaskDispatcher(this)
     private lateinit var coreTaskEngine: TaskEngine
+    internal val approvalSurface = AndroidApprovalSurface(permissionBroker) {
+        if (::coreTaskEngine.isInitialized) coreTaskEngine else null
+    }
 
     fun bindCoreTaskEngine(taskEngine: TaskEngine) {
         coreTaskEngine = taskEngine
@@ -126,7 +130,8 @@ class PlatformAdapters(private val context: Context) {
         PolicyEngine(),
         permissionBroker,
         auditLog,
-        taskRunner
+        taskRunner,
+        toolRegistry
     )
 
     val memoryAndroid = MemoryAndroid(memoryEngine)
@@ -231,25 +236,38 @@ class PlatformAdapters(private val context: Context) {
             // the provider runner.
             val externalResult = adapters.externalRouter.run(task)
             if (externalResult.isSuccess) return externalResult
+            if (externalResult.exceptionOrNull()?.message?.startsWith("permission_required:") == true) {
+                return adapters.approvalSurface.awaitDecisionAndResume(task.id, externalResult) {
+                    adapters.externalRouter.run(task)
+                }
+            }
             return providerRunner.run(task)
         }
 
         private suspend fun dispatchTool(tool: Tool, task: Task, goal: String): Result<Map<String, Any>> {
-            if (!adapters.policyEngine.allows(tool.riskClass, tool)) {
-                adapters.auditLog.record(
-                    entry("tool.policy.reject", task.id, tool.id, tool.riskClass, "DENIED", "policy rejected")
-                )
-                return Result.failure(Exception("policy.reject: " + tool.id))
-            }
-            if (tool.approvalRequired || tool.riskClass.level >= RiskClass.SENSITIVE.level) {
-                adapters.auditLog.record(
-                    entry("tool.permission.request", task.id, tool.id, tool.riskClass, "PENDING", "approval required")
-                )
-                return Result.failure(Exception("permission_required: " + tool.id))
-            }
-            adapters.auditLog.record(
-                entry("tool.execution.grant", task.id, tool.id, tool.riskClass, "GRANTED", "approved")
+            val args = toolArgs(tool, goal).mapValues { it.value as Any }
+            val initial = adapters.executionPolicy.execute(
+                task = task,
+                tool = tool,
+                context = adapters.context,
+                args = args,
+                operation = { runTool(tool, task, goal) }
             )
+            return adapters.approvalSurface.awaitDecisionAndResume(task.id, initial) { requestId ->
+                // The tool attempt stays inside TaskEngine while the Activity presents this
+                // broker-owned request. Approval is rechecked and consumed by ExecutionPolicy.
+                adapters.executionPolicy.execute(
+                    task = task,
+                    tool = tool,
+                    context = adapters.context,
+                    args = args,
+                    approvalRequestId = requestId,
+                    operation = { runTool(tool, task, goal) }
+                )
+            }
+        }
+
+        private suspend fun runTool(tool: Tool, task: Task, goal: String): Result<Map<String, Any>> {
             val result = when (tool.id) {
                 "device.info" -> DeviceInfoTool(adapters.context).execute()
                 "app.launch" -> AppLaunchTool(adapters.context).execute(toolArgs(tool, goal)["package"] ?: "")
@@ -279,18 +297,6 @@ class PlatformAdapters(private val context: Context) {
                 }
                 else -> return Result.failure(Exception("tool " + tool.id + " has no Android implementation"))
             }
-            if (result.isSuccess) {
-                adapters.auditLog.record(
-                    entry("tool.execution.success", task.id, tool.id, tool.riskClass, "GRANTED", "success")
-                )
-            } else {
-                adapters.auditLog.record(
-                    entry(
-                        "tool.execution.failure", task.id, tool.id, tool.riskClass, "DENIED",
-                        result.exceptionOrNull()?.message ?: "execution error"
-                    )
-                )
-            }
             return result
         }
 
@@ -305,21 +311,5 @@ class PlatformAdapters(private val context: Context) {
             }
         }
 
-        private fun entry(
-            operation: String,
-            target: String,
-            toolId: String,
-            risk: RiskClass,
-            decision: String,
-            outcome: String
-        ): AuditEntry = AuditEntry(
-            id = java.util.UUID.randomUUID().toString(),
-            actor = "aethra.runtime",
-            operation = operation,
-            target = target,
-            riskClass = risk,
-            decision = decision,
-            outcome = outcome
-        )
     }
 }

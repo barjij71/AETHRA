@@ -11,6 +11,7 @@ import org.aethra.assistant.aethra.ui.DeviceScreen
 import org.aethra.assistant.aethra.ui.SettingsScreen
 import org.aethra.assistant.aethra.ui.VisualModeState
 import org.aethra.assistant.aethra.ui.VoiceScreen
+import org.aethra.assistant.aethra.permissions.AndroidApprovalUi
 
 /**
  * Jetpack Navigation Compose host for the AETHRA Android app.
@@ -26,8 +27,9 @@ import org.aethra.assistant.aethra.ui.VoiceScreen
  * pretending missing features are implemented.
  */
 @Composable
-fun AppNavigation(
+internal fun AppNavigation(
     runtime: org.aethra.assistant.aethra.runtime.Runtime,
+    approvalUi: AndroidApprovalUi,
     visualModeState: VisualModeState,
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier
 ) {
@@ -41,6 +43,7 @@ fun AppNavigation(
         composable("home") {
             AthraHomePage(
                 runtime = runtime,
+                approvalUi = approvalUi,
                 onNavigateToSettings = {
                     navController.navigate("settings")
                     Unit

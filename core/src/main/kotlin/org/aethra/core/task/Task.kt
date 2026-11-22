@@ -62,6 +62,12 @@ class Task(
 
     private val _executed = AtomicBoolean(false)
 
+    /** Record one TaskEngine retry within the current execution cycle. */
+    internal fun recordRetry(): Int {
+        retriesUsed++
+        return retriesUsed
+    }
+
     fun setTimeoutMs(ms: Long) {
         if (ms < 0) throw IllegalArgumentException("timeoutMs must be >= 0")
         timeoutMs = ms

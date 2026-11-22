@@ -1,11 +1,12 @@
 package org.aethra.core.external
 
-import org.aethra.core.domain.ApprovalGrant
 import org.aethra.core.domain.AuditEntry
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.security.AuditLog
+import org.aethra.core.security.PermissionAuthorizationException
 import org.aethra.core.task.Task
 import org.aethra.core.security.PermissionBroker
+import org.aethra.core.security.PermissionRequest
 import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.task.TaskRunner
 import kotlin.Result
@@ -57,19 +58,37 @@ class ExternalCapabilityRouter(
         }
 
         // Permission/approval gate for sensitive operations.
-        val approvalResult = checkPermission(request)
-        if (approvalResult.isFailure) {
+        val authorizationResult = checkPermission(capabilityId, request)
+        if (authorizationResult.isFailure) {
+            val authorizationError = authorizationResult.exceptionOrNull()
             recordAudit(
                 operation = "external.permission.reject",
                 target = capabilityId,
                 decision = "DENIED",
-                outcome = "PERMISSION_REQUIRED",
+                outcome = authorizationError?.message ?: "PERMISSION_REQUIRED",
                 riskClass = request.riskClass
             )
-            return approvalResult.map { _ -> CapabilityResult(capabilityId, request.operation, false) }
+            return Result.failure(authorizationError ?: IllegalStateException("permission_required"))
         }
+        val authorization = authorizationResult.getOrThrow()
 
-        val result = capability.execute(request)
+        val result = try {
+            capability.execute(request)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            authorization?.let {
+                permissionBroker?.completeExecution(it.id, succeeded = false, reason = "execution cancelled")
+            }
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+        authorization?.let { requestRecord ->
+            permissionBroker?.completeExecution(
+                requestRecord.id,
+                succeeded = result.isSuccess && result.getOrNull()?.success == true,
+                reason = if (result.isSuccess && result.getOrNull()?.success == true) "operation completed" else "operation failed"
+            )
+        }
         val capResult = result.getOrDefault(CapabilityResult(capabilityId, request.operation, false))
 
         recordAudit(
@@ -94,7 +113,9 @@ class ExternalCapabilityRouter(
         val request = CapabilityRequest(
             operation = task.goal.trim(),
             riskClass = task.riskClass,
-            requiresApproval = task.riskClass.level >= RiskClass.SENSITIVE.level
+            requiresApproval = task.riskClass.level >= RiskClass.SENSITIVE.level,
+            approvalRequestId = task.id,
+            targetId = task.id
         )
 
         val capability = registry.all()
@@ -120,31 +141,68 @@ class ExternalCapabilityRouter(
      * Check the permission broker for sensitive operations. Returns failure if
      * approval is required but not granted.
      */
-    private suspend fun checkPermission(request: CapabilityRequest): Result<Unit> {
+    private suspend fun checkPermission(
+        capabilityId: String,
+        request: CapabilityRequest
+    ): Result<PermissionRequest?> {
         if (request.riskClass.level < RiskClass.SENSITIVE.level && !request.requiresApproval) {
-            return Result.success(Unit)
+            return Result.success(null)
         }
 
-        permissionBroker?.let { broker ->
-            val token = broker.requestApproval(
-                actor = "aethra.runtime",
-                risk = request.riskClass,
-                operation = request.operation,
-                target = "external:${request.operation}"
-            )
-            if (token != null) {
-                return Result.failure(
-                    IllegalStateException("permission_required: $token")
-                )
-            }
-        } ?: run {
+        val broker = permissionBroker ?: run {
             // No permission broker configured: sensitive operations cannot proceed.
             return Result.failure(
                 IllegalStateException("permission_required: no permission broker configured")
             )
         }
 
-        return Result.success(Unit)
+        val target = request.targetId ?: "external:$capabilityId"
+        val approval = try {
+            if (request.approvalRequestId == null) {
+                broker.requestApproval(
+                    requester = "aethra.runtime",
+                    risk = request.riskClass,
+                    operation = request.operation,
+                    target = target,
+                    capability = capabilityId
+                )
+            } else {
+                broker.getRequest(request.approvalRequestId) ?: broker.requestApproval(
+                    requester = "aethra.runtime",
+                    risk = request.riskClass,
+                    operation = request.operation,
+                    target = target,
+                    capability = capabilityId,
+                    requestId = request.approvalRequestId
+                )
+            }
+        } catch (error: Exception) {
+            return Result.failure(error)
+        }
+
+        // Let the broker enforce state and record the blocked attempt as part
+        // of the same authoritative authorization boundary.
+        return try {
+            Result.success(
+                broker.beginExecution(
+                    approval.id,
+                    request.riskClass,
+                    request.operation,
+                    capabilityId,
+                    target
+                )
+            )
+        } catch (error: PermissionAuthorizationException) {
+            Result.failure(
+                PermissionAuthorizationException(
+                    approval.id,
+                    error.code,
+                    "permission_required:${approval.id}:${approval.state.name}"
+                )
+            )
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
     }
 
     private suspend fun recordAudit(

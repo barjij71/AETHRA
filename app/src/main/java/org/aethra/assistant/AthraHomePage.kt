@@ -10,12 +10,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import org.aethra.assistant.aethra.permissions.AndroidApprovalUi
+import org.aethra.core.security.PermissionDecision
+import org.aethra.core.security.PermissionRequest
 import org.aethra.core.domain.DomainEvent
 import org.aethra.core.domain.MemoryEntry
 import org.aethra.core.skills.Skill
@@ -23,8 +28,9 @@ import org.aethra.core.task.Task
 import org.aethra.assistant.aethra.runtime.Runtime
 
 @Composable
-fun AthraHomePage(
+internal fun AthraHomePage(
     runtime: Runtime,
+    approvalUi: AndroidApprovalUi,
     onNavigateToSettings: () -> Unit = {}
 ) {
     var commandText by remember { mutableStateOf("") }
@@ -32,6 +38,10 @@ fun AthraHomePage(
     var events by remember { mutableStateOf<List<DomainEvent>>(emptyList()) }
     var skills by remember { mutableStateOf<List<Skill>>(emptyList()) }
     var memories by remember { mutableStateOf<List<MemoryEntry>>(emptyList()) }
+    var approvalError by remember { mutableStateOf<String?>(null) }
+    val pendingRequests by approvalUi.pendingRequests.collectAsState()
+    val approvalScope = rememberCoroutineScope()
+    val decisionFailureText = stringResource(id = R.string.permission_decision_failed)
 
     val taskEngine = remember(runtime) { runtime.taskEngine }
     val skillRegistryAndroid = remember(runtime) { runtime.skillRegistryAndroid }
@@ -69,6 +79,26 @@ fun AthraHomePage(
             Button(onClick = onNavigateToSettings) {
                 Text(text = stringResource(id = R.string.settings_button))
             }
+        }
+
+        if (pendingRequests.isNotEmpty()) {
+            Text(
+                text = stringResource(id = R.string.sensitive_requests_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            pendingRequests.forEach { request ->
+                SensitivePermissionRequestCard(
+                    request = request,
+                    onDecision = { decision ->
+                        approvalScope.launch {
+                            approvalError = null
+                            runCatching { approvalUi.decide(request.id, decision) }
+                                .onFailure { approvalError = decisionFailureText }
+                        }
+                    }
+                )
+            }
+            approvalError?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
         }
 
         Row(
@@ -142,6 +172,48 @@ fun AthraHomePage(
         }
     }
 }
+
+@Composable
+private fun SensitivePermissionRequestCard(
+    request: PermissionRequest,
+    onDecision: (PermissionDecision) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(stringResource(id = R.string.sensitive_request_warning), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(id = R.string.sensitive_request_id, request.id))
+            Text(stringResource(id = R.string.sensitive_request_tool, safeUiLabel(request.operation)))
+            Text(
+                stringResource(
+                    id = R.string.sensitive_request_capabilities,
+                    safeUiLabel(request.capabilities.sorted().joinToString().ifEmpty { request.capability })
+                )
+            )
+            val target = request.target.takeIf { it.matches(Regex("[0-9a-fA-F-]{36}")) }
+            if (target != null) {
+                Text(stringResource(id = R.string.sensitive_request_target, target))
+            }
+            Text(stringResource(id = R.string.sensitive_request_risk, request.riskClass.name))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { onDecision(PermissionDecision.APPROVE) }) {
+                    Text(stringResource(id = R.string.approve))
+                }
+                OutlinedButton(onClick = { onDecision(PermissionDecision.DENY) }) {
+                    Text(stringResource(id = R.string.deny))
+                }
+                TextButton(onClick = { onDecision(PermissionDecision.CANCEL) }) {
+                    Text(stringResource(id = R.string.cancel))
+                }
+            }
+        }
+    }
+}
+
+private fun safeUiLabel(value: String): String =
+    value.filterNot(Char::isISOControl).take(160).ifBlank { "—" }
 
 @Composable
 private fun stringResource(id: Int): String = androidx.compose.ui.res.stringResource(id = id)

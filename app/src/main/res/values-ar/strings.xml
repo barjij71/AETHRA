@@ -19,6 +19,17 @@
     <string name="no_skills">لا توجد مهارات بعد.</string>
     <string name="memory_section">الذاكرة</string>
     <string name="no_memory">لا توجد ذكريات بعد.</string>
+    <string name="sensitive_requests_title">طلبات العمليات الحساسة</string>
+    <string name="sensitive_request_warning">عملية حساسة — راجعها قبل السماح</string>
+    <string name="sensitive_request_id">معرّف الطلب: %1$s</string>
+    <string name="sensitive_request_tool">العملية: %1$s</string>
+    <string name="sensitive_request_capabilities">الصلاحيات المطلوبة: %1$s</string>
+    <string name="sensitive_request_target">مرجع المهمة: %1$s</string>
+    <string name="sensitive_request_risk">مستوى الخطورة: %1$s</string>
+    <string name="approve">موافقة</string>
+    <string name="deny">رفض</string>
+    <string name="cancel">إلغاء</string>
+    <string name="permission_decision_failed">تعذّر تسجيل القرار. لا يزال الطلب بانتظار القرار.</string>
 
     <!-- Navigation -->
     <string name="nav_home">الرئيسية</string>

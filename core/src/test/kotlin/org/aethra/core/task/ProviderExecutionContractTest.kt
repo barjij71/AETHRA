@@ -210,7 +210,7 @@ class ProviderExecutionContractTest {
             creator = "Fake",
             modelId = "fake-v1",
             displayName = "Fake Model",
-            accessProvider = "primary",
+            accessProvider = "default",
             route = "local://primary/fake-v1",
             capabilities = setOf("tool_calling"),
             contextLimit = null,
@@ -324,7 +324,7 @@ class ProviderExecutionContractTest {
             creator = "Fake",
             modelId = "fake-v1",
             displayName = "Fake Model",
-            accessProvider = "primary",
+            accessProvider = "default",
             route = "local://primary/fake-v1",
             capabilities = setOf("tool_calling"),
             contextLimit = null,
@@ -435,7 +435,7 @@ class ProviderExecutionContractTest {
             creator = "Fake",
             modelId = "fake-v1",
             displayName = "Fake Model",
-            accessProvider = "primary",
+            accessProvider = "default",
             route = "local://primary/fake-v1",
             capabilities = setOf("tool_calling"),
             contextLimit = null,
@@ -546,7 +546,7 @@ class ProviderExecutionContractTest {
             creator = "Fake",
             modelId = "fake-v1",
             displayName = "Fake Model",
-            accessProvider = "primary",
+            accessProvider = "default",
             route = "local://primary/fake-v1",
             capabilities = setOf("tool_calling"),
             contextLimit = null,
@@ -711,7 +711,7 @@ class ProviderExecutionContractTest {
             creator = "Fake",
             modelId = "fake-v1",
             displayName = "Fake Model",
-            accessProvider = "primary",
+            accessProvider = "default",
             route = "local://primary/fake-v1",
             capabilities = setOf("tool_calling"),
             contextLimit = null,
@@ -734,13 +734,19 @@ class ProviderExecutionContractTest {
 
         assertTrue("Expected success", result.isSuccess)
         val auditEntries = auditLog.all()
-        assertEquals("Expected audit entries", 2, auditEntries.size)
-        val primaryEntry = auditEntries[0]
-        val fallbackEntry = auditEntries[1]
-        assertEquals("Expected primary operation", "provider_execute", primaryEntry.operation)
-        assertEquals("Expected primary outcome", "FAILED_DURING_EXECUTION", primaryEntry.outcome)
-        assertEquals("Expected fallback operation", "provider_fallback", fallbackEntry.operation)
-        assertEquals("Expected fallback outcome", "SUCCESS", fallbackEntry.outcome)
-        assertTrue("Expected fallback target contains fallback provider", fallbackEntry.target.contains("fallback"))
+        assertEquals("Expected route, primary, fallback decision/execution and result evidence", 5, auditEntries.size)
+        assertTrue(auditEntries.any {
+            it.operation == "provider_select" && it.target == "default/fake-v1" && it.outcome == "PRIMARY_SELECTED"
+        })
+        assertTrue(auditEntries.any {
+            it.operation == "provider_execute" && it.target == "default/fake-v1" && it.outcome == "FAILED_DURING_EXECUTION"
+        })
+        assertTrue(auditEntries.any {
+            it.operation == "provider_fallback" && it.target.contains("fallback") && it.decision == "GRANTED" && it.outcome == "POLICY_APPROVED"
+        })
+        assertTrue(auditEntries.any {
+            it.operation == "provider_execute" && it.target.contains("fallback") && it.outcome == "SUCCESS"
+        })
+        assertTrue(auditEntries.any { it.operation == "provider_result" && it.outcome == "SUCCESS_FALLBACK" })
     }
 }

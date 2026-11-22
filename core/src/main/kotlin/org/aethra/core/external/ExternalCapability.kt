@@ -19,7 +19,11 @@ data class CapabilityRequest(
     val operation: String,
     val arguments: Map<String, String> = emptyMap(),
     val riskClass: RiskClass = RiskClass.READ_ONLY,
-    val requiresApproval: Boolean = false
+    val requiresApproval: Boolean = false,
+    /** Existing request ID for a UI decision or a retry of the same TaskEngine request. */
+    val approvalRequestId: String? = null,
+    /** Task or operation target to which the authorization is bound. */
+    val targetId: String? = null
 )
 
 object ExternalCapabilityPolicy {

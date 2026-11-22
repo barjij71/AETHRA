@@ -49,8 +49,18 @@ data class ModelDefinition(
     /** Whether this model supports streaming */
     val supportsStreaming: Boolean,
     /** Whether this model supports reasoning */
-    val supportsReasoning: Boolean
-)
+    val supportsReasoning: Boolean,
+    /**
+     * Selection-relative cost tier for this provider/model route. Values are
+     * comparable across the configured candidate set; lower known tiers are
+     * cheaper and null means unknown. This is not a fabricated currency price.
+     */
+    val costTier: Int? = null
+) {
+    init {
+        require(costTier == null || costTier >= 0) { "costTier must be non-negative when known" }
+    }
+}
 
 class ModelRegistry(
     private val storage: Storage,

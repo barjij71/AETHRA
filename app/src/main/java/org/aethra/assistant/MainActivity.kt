@@ -3,6 +3,8 @@ package org.aethra.assistant
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
@@ -10,18 +12,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import org.aethra.assistant.aethra.navigation.AppNavigation
-import org.aethra.assistant.aethra.runtime.Runtime
-import org.aethra.assistant.aethra.runtime.createRuntime
+import org.aethra.assistant.aethra.runtime.AndroidRuntimeViewModel
 import org.aethra.assistant.aethra.ui.VisualModeState
 
 class MainActivity : ComponentActivity() {
-    private var runtime: Runtime? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val appRuntime = createRuntime(applicationContext)
-        runtime = appRuntime
-        appRuntime.start()
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                require(modelClass.isAssignableFrom(AndroidRuntimeViewModel::class.java))
+                return AndroidRuntimeViewModel(applicationContext) as T
+            }
+        }
+        val runtimeModel = ViewModelProvider(this, factory)[AndroidRuntimeViewModel::class.java]
+        val appRuntime = runtimeModel.runtime
+        val approvalUi = runtimeModel.approvalUi
 
         val visualModeState = VisualModeState()
 
@@ -38,6 +44,7 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                     AppNavigation(
                         runtime = appRuntime,
+                        approvalUi = approvalUi,
                         visualModeState = visualModeState,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -46,9 +53,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        runtime?.shutdown()
-        runtime = null
-        super.onDestroy()
-    }
 }

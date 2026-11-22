@@ -21,7 +21,11 @@ data class Tool(
     val timeoutSeconds: Int = 30,
     val native: Boolean = false,
     val aliases: List<String> = emptyList()
-)
+) {
+    /** Whether executing this operation requires a per-request Core decision. */
+    val requiresSensitiveApproval: Boolean
+        get() = approvalRequired || riskClass.level >= RiskClass.SENSITIVE.level
+}
 
 /**
  * Runtime stats for the registry (useful for the activity/audit view).
