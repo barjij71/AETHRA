@@ -24,7 +24,7 @@ Optional fields:
 - `platforms`
 - `riskClass`
 
-Unknown fields, unsupported contract versions, malformed arrays, blank required values, and unsupported risk classes are rejected.
+Unknown fields, unsupported contract versions, malformed arrays, blank required values, and unsupported risk classes are rejected. The risk classes are `READ_ONLY`, `REVERSIBLE`, `SENSITIVE`, and `DESTRUCTIVE`.
 
 Parsing is validation only. `SkillRegistry.registerManifest()` is the Core-owned ingestion boundary: conversion to a Core Skill always produces an **UNTRUSTED, disabled, DISCOVERED** skill before persistence. Trust and activation remain Core-owned operations.
 
