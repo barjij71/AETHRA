@@ -23,7 +23,7 @@ class SkillRegistryTest {
     fun registerManifestValidatesAndForcesUntrustedDisabledState() {
         val reg = createRegistry()
         val result = reg.registerManifest(
-            """{"contractVersion":"1.0","id":"manifest.skill","name":"Manifest Skill","version":"2.0.0","capabilities":["demo.read"],"riskClass":"SAFE"}"""
+            """{"contractVersion":"1.0","id":"manifest.skill","name":"Manifest Skill","version":"2.0.0","capabilities":["demo.read"],"riskClass":"REVERSIBLE"}"""
         )
         assertTrue(result.isSuccess)
         val stored = reg.get("manifest.skill")!!
