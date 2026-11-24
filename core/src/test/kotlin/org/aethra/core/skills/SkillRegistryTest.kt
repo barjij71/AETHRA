@@ -20,6 +20,30 @@ class SkillRegistryTest {
     }
 
     @Test
+    fun registerManifestValidatesAndForcesUntrustedDisabledState() {
+        val reg = createRegistry()
+        val result = reg.registerManifest(
+            """{"contractVersion":"1.0","id":"manifest.skill","name":"Manifest Skill","version":"2.0.0","capabilities":["demo.read"],"riskClass":"SAFE"}"""
+        )
+        assertTrue(result.isSuccess)
+        val stored = reg.get("manifest.skill")!!
+        assertEquals("2.0.0", stored.version)
+        assertEquals(SkillTrustState.UNTRUSTED, stored.trustState)
+        assertFalse(stored.enabled)
+        assertFalse(stored.isActive)
+    }
+
+    @Test
+    fun registerManifestRejectsInvalidManifestWithoutMutation() {
+        val reg = createRegistry()
+        val result = reg.registerManifest(
+            """{"contractVersion":"1.0","id":"bad","name":"Bad","version":"1.0.0","unexpected":true}"""
+        )
+        assertTrue(result.isFailure)
+        assertNull(reg.get("bad"))
+    }
+
+    @Test
     fun registerRejectsDuplicateId() {
         val reg = createRegistry()
         assertTrue(reg.register(Skill(id = "s1", name = "Test 1")))
