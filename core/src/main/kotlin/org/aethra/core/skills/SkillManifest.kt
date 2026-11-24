@@ -58,7 +58,7 @@ data class SkillManifest(
     "requestedPermissions":{"type":"array","items":{"type":"string","minLength":1}},
     "dependencies":{"type":"array","items":{"type":"string","minLength":1}},
     "platforms":{"type":"array","items":{"type":"string","minLength":1}},
-    "riskClass":{"type":"string","enum":["READ_ONLY","SAFE","LOW","SENSITIVE","DESTRUCTIVE"]}
+    "riskClass":{"type":"string","enum":["READ_ONLY","REVERSIBLE","SENSITIVE","DESTRUCTIVE"]}
   }
 }"""
 
