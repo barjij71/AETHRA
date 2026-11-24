@@ -26,7 +26,7 @@ Optional fields:
 
 Unknown fields, unsupported contract versions, malformed arrays, blank required values, and unsupported risk classes are rejected.
 
-Parsing is validation only. Conversion to a Core Skill always produces an **UNTRUSTED, disabled, DISCOVERED** skill. Trust and activation remain Core-owned operations.
+Parsing is validation only. `SkillRegistry.registerManifest()` is the Core-owned ingestion boundary: conversion to a Core Skill always produces an **UNTRUSTED, disabled, DISCOVERED** skill before persistence. Trust and activation remain Core-owned operations.
 
 ## Workflow acceptance boundary
 
