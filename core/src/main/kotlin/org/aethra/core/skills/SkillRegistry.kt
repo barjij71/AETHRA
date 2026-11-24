@@ -21,6 +21,19 @@ class SkillRegistry(private val storage: Storage) {
         loadPersisted()
     }
 
+    /**
+     * Parse and register an external manifest through the Core trust boundary.
+     *
+     * Parsing validates the wire contract only; registration deliberately
+     * converts the candidate to UNTRUSTED + disabled state before persistence.
+     */
+    fun registerManifest(rawManifest: String): Result<Skill> = runCatching {
+        val manifest = SkillManifest.parse(rawManifest).getOrThrow()
+        val skill = manifest.toUntrustedSkill()
+        require(register(skill)) { "skill already registered: ${skill.id}" }
+        skill
+    }
+
     fun register(skill: Skill): Boolean {
         synchronized(lock) {
             if (skills.containsKey(skill.id)) return false
