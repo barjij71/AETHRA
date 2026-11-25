@@ -24,7 +24,7 @@ class AuditLogFailureContractTest {
         assertTrue(error is AuditLogException.Corrupt)
     }
 
-    private class ReadFailureStorage : Storage {
+    private open class ReadFailureStorage : Storage {
         override suspend fun getString(key: String, defaultValue: String?): String? {
             throw StorageException.IoFailure("read failed")
         }
