@@ -356,7 +356,7 @@ No SkillOrchestrator in Core. Can be built as a higher layer on:
 - ✅ Skill never executes — no `execute()` method
 - ✅ Skill capabilities → ToolRegistry → ExecutionPolicy → PermissionBroker → AuditLog
 - ✅ Trust transitions `internal` — external adapters cannot call
-- ✅ `SkillRegistry.enable()` requires `TRUSTED` + `isInstalled`
+- ✅ `SkillRegistry.enable()` requires `TRUSTED` + (`INSTALLED` or `DISABLED`)
 - ✅ Manifest parsing never grants trust — `toUntrustedSkill()` always `UNTRUSTED`/`disabled`/`DISCOVERED`
 - ✅ TaskEngine sole execution authority — no SkillOrchestrator in core
 - ✅ No dependency resolver — `dependencies` is metadata only
@@ -366,7 +366,7 @@ No SkillOrchestrator in Core. Can be built as a higher layer on:
 
 ### Android Compatibility
 - `SkillRegistryAndroid` exposes: `register()`, `all()`, `get()`, `enable()`, `disable()`, `remove()`, `find()`
-- New methods `install()`, `markUpdateAvailable()` are `internal` (not exposed)
+- New methods `install()`, `markUpdateAvailable()` are `public` (not exposed via Android facade)
 - No Android API changes required
 
 ---
@@ -377,7 +377,7 @@ No SkillOrchestrator in Core. Can be built as a higher layer on:
 |------|-------------|
 | `core/src/main/kotlin/org/aethra/core/skills/SkillRegistry.kt` | Added `install()`, `markUpdateAvailable()`; fixed `enable()`/`disable()` per contract |
 | `core/src/test/kotlin/org/aethra/core/skills/SkillRegistryTest.kt` | Added comprehensive contract tests |
-| `docs/architecture/SKILL_ORCHESTRATION.md` | Created documentation |
+| `docs/architecture/SKILL_ORCHESTRATION.md` | Modified documentation |
 
 **Protected files NOT modified:**
 - `Skill.kt`, `SkillManifest.kt`, `SkillTrustState`, `SkillState`
