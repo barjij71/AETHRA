@@ -68,13 +68,48 @@ class SkillRegistry(private val storage: Storage) {
         }
     }
 
+    /** Core-owned installation transition. Installation never grants trust or execution. */
+    internal fun install(id: String): Boolean {
+        synchronized(lock) {
+            val skill = skills[id] ?: return false
+            if (skill.state == SkillState.REMOVED) return false
+            if (skill.state == SkillState.INSTALLED) return true
+            skills[id] = skill.copy(
+                state = SkillState.INSTALLED,
+                enabled = false,
+                updatedAt = System.currentTimeMillis()
+            )
+            persistState()
+            return true
+        }
+    }
+
+    /** Marks a known skill as having a newer candidate available without activating it. */
+    internal fun markUpdateAvailable(id: String): Boolean {
+        synchronized(lock) {
+            val skill = skills[id] ?: return false
+            if (!skill.state.isInstalled) return false
+            skills[id] = skill.copy(
+                state = SkillState.UPDATE_AVAILABLE,
+                enabled = false,
+                updatedAt = System.currentTimeMillis()
+            )
+            persistState()
+            return true
+        }
+    }
+
     fun enable(id: String): Boolean {
         synchronized(lock) {
             val skill = skills[id] ?: return false
             if (skill.trustState != SkillTrustState.TRUSTED) return false
-            if (!skill.state.isInstalled) return false
+            if (skill.state != SkillState.INSTALLED && skill.state != SkillState.DISABLED) return false
             if (skill.enabled) return true
-            skills[id] = skill.copy(enabled = true, updatedAt = System.currentTimeMillis())
+            skills[id] = skill.copy(
+                state = SkillState.INSTALLED,
+                enabled = true,
+                updatedAt = System.currentTimeMillis()
+            )
             persistState()
             return true
         }
@@ -83,8 +118,13 @@ class SkillRegistry(private val storage: Storage) {
     fun disable(id: String): Boolean {
         synchronized(lock) {
             val skill = skills[id] ?: return false
-            if (!skill.enabled) return true
-            skills[id] = skill.copy(enabled = false, updatedAt = System.currentTimeMillis())
+            if (skill.state == SkillState.REMOVED) return false
+            if (!skill.enabled && skill.state == SkillState.DISABLED) return true
+            skills[id] = skill.copy(
+                state = SkillState.DISABLED,
+                enabled = false,
+                updatedAt = System.currentTimeMillis()
+            )
             persistState()
             return true
         }
