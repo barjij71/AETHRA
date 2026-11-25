@@ -70,14 +70,79 @@ class SkillRegistry(private val storage: Storage) {
         }
     }
 
+    /**
+     * Core-owned installation transition. Installation never grants trust or execution.
+     * Lifecycle transition from DISCOVERED/VALID/VALIDATING/UPDATE_AVAILABLE to INSTALLED.
+     * Resets trust to UNTRUSTED and forces enabled=false.
+     */
+    fun install(id: String): Boolean {
+        synchronized(lock) {
+            val skill = skills[id] ?: return false
+            if (skill.state == SkillState.REMOVED) return false
+            if (skill.state == SkillState.INSTALLED) return true
+
+            val allowedSources = setOf(
+                SkillState.DISCOVERED,
+                SkillState.VALID,
+                SkillState.VALIDATING,
+                SkillState.UPDATE_AVAILABLE
+            )
+            if (skill.state !in allowedSources) return false
+
+            skills[id] = skill.copy(
+                state = SkillState.INSTALLED,
+                trustState = SkillTrustState.UNTRUSTED,
+                enabled = false,
+                updatedAt = System.currentTimeMillis()
+            )
+            try {
+                persistState()
+            } catch (e: Exception) {
+                skills[id] = skill
+                throw SkillPersistenceException("Failed to persist skill installation", e)
+            }
+            return true
+        }
+    }
+
+    /**
+     * Marks an installed skill as having a newer artifact available without activating it.
+     * Preserves identity trust metadata but forces disabled state.
+     * The new artifact must go through external verification -> install() -> trust() -> enable().
+     */
+    fun markUpdateAvailable(id: String): Boolean {
+        synchronized(lock) {
+            val skill = skills[id] ?: return false
+            if (!skill.state.isInstalled) return false
+
+            skills[id] = skill.copy(
+                state = SkillState.UPDATE_AVAILABLE,
+                enabled = false,
+                updatedAt = System.currentTimeMillis()
+            )
+            try {
+                persistState()
+            } catch (e: Exception) {
+                skills[id] = skill
+                throw SkillPersistenceException("Failed to persist update available state", e)
+            }
+            return true
+        }
+    }
+
     fun enable(id: String): Boolean {
         synchronized(lock) {
             val skill = skills[id] ?: return false
             if (skill.trustState != SkillTrustState.TRUSTED) return false
-            if (!skill.state.isInstalled) return false
-            if (skill.enabled) return true
+            // Allow enable from INSTALLED or DISABLED (re-activation)
+            if (skill.state != SkillState.INSTALLED && skill.state != SkillState.DISABLED) return false
+            if (skill.enabled && skill.state == SkillState.INSTALLED) return true
 
-            skills[id] = skill.copy(enabled = true, updatedAt = System.currentTimeMillis())
+            skills[id] = skill.copy(
+                state = SkillState.INSTALLED,
+                enabled = true,
+                updatedAt = System.currentTimeMillis()
+            )
             try {
                 persistState()
             } catch (e: Exception) {
@@ -91,9 +156,27 @@ class SkillRegistry(private val storage: Storage) {
     fun disable(id: String): Boolean {
         synchronized(lock) {
             val skill = skills[id] ?: return false
-            if (!skill.enabled) return true
+            // Already disabled and in DISABLED state -> idempotent
+            if (!skill.enabled && skill.state == SkillState.DISABLED) return true
 
-            skills[id] = skill.copy(enabled = false, updatedAt = System.currentTimeMillis())
+            // UPDATE_AVAILABLE and UPDATING are NOT converted to DISABLED
+            // They already guarantee enabled=false and isActive=false
+            // Converting them would lose semantic information about pending update
+            if (skill.state == SkillState.UPDATE_AVAILABLE ||
+                skill.state == SkillState.UPDATING) {
+                return false
+            }
+            // REMOVED rejects any mutation
+            if (skill.state == SkillState.REMOVED) return false
+
+            // Only disable from INSTALLED (and UPDATING if we allowed it, but we reject above)
+            if (!skill.state.isInstalled) return false
+
+            skills[id] = skill.copy(
+                state = SkillState.DISABLED,
+                enabled = false,
+                updatedAt = System.currentTimeMillis()
+            )
             try {
                 persistState()
             } catch (e: Exception) {
