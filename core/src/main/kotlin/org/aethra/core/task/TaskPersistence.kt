@@ -52,10 +52,10 @@ class TaskPersistence(private val storage: Storage) {
      * Returns empty list only for legitimately empty storage (EMPTY).
      */
     suspend fun loadAll(): List<Task> {
-        val encoded = storage.getString(journalKey) ?: return emptyList()
-        if (encoded.isBlank()) return emptyList()
-
         return try {
+            val encoded = storage.getString(journalKey) ?: return emptyList()
+            if (encoded.isBlank()) return emptyList()
+
             json.decodeFromString<List<PersistedTask>>(encoded).map { snapshot ->
                 val task = Task(
                     goal = snapshot.goal,
@@ -89,14 +89,11 @@ class TaskPersistence(private val storage: Storage) {
         } catch (e: StorageException.IoFailure) {
             throw PersistenceException.IoFailure("Task journal I/O failure: ${e.message}", e)
         } catch (e: Exception) {
-            // Phase 3: Fail closed on CORRUPT/PARTIAL/INCOMPATIBLE data
-            // Do not silently return emptyList() - that would mask data corruption
             throw PersistenceException("Failed to load task journal: ${e.message}", e)
         }
     }
 }
 
-/** Base exception for persistence failures. */
 open class PersistenceException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class Corrupt(message: String, cause: Throwable? = null) : PersistenceException(message, cause)
     class Incompatible(message: String, cause: Throwable? = null) : PersistenceException(message, cause)
