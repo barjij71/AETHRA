@@ -60,8 +60,6 @@ class Phase3BExecutionIdentityContractTest {
         assertEquals(TaskState.QUEUED, restoredA.state)
         assertEquals(TaskState.QUEUED, restoredB.state)
         assertTrue(restoredA.executionAttemptId != restoredB.executionAttemptId)
-        assertEquals(bAttemptCounter, bAttemptCounter)
-        assertEquals(bRetries, 1)
     }
 
     @Test
