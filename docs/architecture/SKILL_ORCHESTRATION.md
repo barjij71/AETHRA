@@ -129,7 +129,7 @@ SkillRegistry.registerManifest() → persists UNTRUSTED
 
 | Operation | From States | To State | trustState | enabled | isActive | Notes |
 |-----------|-------------|----------|------------|---------|----------|-------|
-| `install()` | `DISCOVERED`, `VALID`, `VALIDATING` | `INSTALLED` | `UNTRUSTED` (forced) | `false` (forced) | `false` | **Lifecycle only** — no artifact verification |
+| `install()` | `DISCOVERED`, `VALID`, `VALIDATING`, `UPDATE_AVAILABLE` | `INSTALLED` | `UNTRUSTED` (forced) | `false` (forced) | `false` | **Lifecycle only** — no artifact verification |
 | `install()` | `INSTALLED` | `INSTALLED` | unchanged | unchanged | unchanged | Idempotent |
 | `markUpdateAvailable()` | `INSTALLED` | `UPDATE_AVAILABLE` | **preserved** (identity trust) | `false` (forced) | `false` | Does NOT make new artifact trusted |
 | `enable()` | `INSTALLED` + `TRUSTED` | `INSTALLED` | unchanged | `true` | `true` | Normal activation |
@@ -143,8 +143,8 @@ SkillRegistry.registerManifest() → persists UNTRUSTED
 ### Rejected Transitions
 - `enable()` from `UPDATE_AVAILABLE`, `UPDATING`, `UNTRUSTED`, `REVOKED`, `DISCOVERED`, `VALID`, `VALIDATING`, `FAILED`, `REMOVED`
 - `disable()` from `UPDATE_AVAILABLE`, `UPDATING`, `REMOVED` (no mutation, no persistence)
-- `markUpdateAvailable()` from non-`INSTALLED` states
-- `install()` from `REMOVED`, `UPDATE_AVAILABLE`, `DISABLED`, `UPDATING`, `FAILED`
+- `markUpdateAvailable()` from non-`INSTALLED` states (including `UPDATING`, `UPDATE_AVAILABLE`, `DISABLED`, `FAILED`, `REMOVED`)
+- `install()` from `REMOVED`, `DISABLED`, `UPDATING`, `FAILED`
 
 ---
 
@@ -209,9 +209,11 @@ The security sequence is: **external verification → install() → UNTRUSTED �
 
 The current model has **identity trust only** (`trustState` bound to `skill.id`), **not artifact/version trust**.
 
+**`trustState` represents identity-level trust metadata only.** It does **not** represent cryptographic artifact-level verification. A `TRUSTED` trustState means "Core has approved this skill identity as safe to execute," but it does **not** independently prove a specific artifact's integrity or checksum. Artifact-level trust requires external verification (checksum, signature, review) before `install()` + `trust()` + `enable()`.
+
 | Scenario | trustState | Meaning |
 |----------|------------|---------|
-| `INSTALLED` + `TRUSTED` + `enabled=true` | `TRUSTED` | "Core has verified this skill identity is safe to execute" |
+| `INSTALLED` + `TRUSTED` + `enabled=true` | `TRUSTED` | "Core has approved this skill identity as safe to execute" |
 | `markUpdateAvailable()` | `TRUSTED` preserved | "A new artifact exists for this identity, but has NOT been verified" |
 | `install(new_version)` | **RESET to `UNTRUSTED`** | "New artifact with same identity requires re-verification" |
 

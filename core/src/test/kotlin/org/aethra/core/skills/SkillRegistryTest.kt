@@ -197,6 +197,15 @@ class SkillRegistryTest {
         assertEquals(SkillState.INSTALLED, stored.state)
     }
 
+    @Test
+    fun markUpdateAvailableRejectsUpdating() {
+        val reg = createRegistry()
+        reg.register(Skill(id = "s1", name = "Test", state = SkillState.UPDATING))
+        assertFalse(reg.markUpdateAvailable("s1"))
+        assertEquals(SkillState.UPDATING, reg.get("s1")!!.state)
+        // No persistence mutation should occur
+    }
+
     // ==================== ENABLE CONTRACT TESTS ====================
 
     @Test

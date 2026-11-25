@@ -109,11 +109,12 @@ class SkillRegistry(private val storage: Storage) {
      * Marks an installed skill as having a newer artifact available without activating it.
      * Preserves identity trust metadata but forces disabled state.
      * The new artifact must go through external verification -> install() -> trust() -> enable().
+     * Only allowed from INSTALLED state (not UPDATING).
      */
     fun markUpdateAvailable(id: String): Boolean {
         synchronized(lock) {
             val skill = skills[id] ?: return false
-            if (!skill.state.isInstalled) return false
+            if (skill.state != SkillState.INSTALLED) return false
 
             skills[id] = skill.copy(
                 state = SkillState.UPDATE_AVAILABLE,
