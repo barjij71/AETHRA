@@ -7,7 +7,7 @@ class SkillRegistryAndroid(private val skillRegistry: SkillRegistry) {
     fun register(skill: Skill): Boolean = skillRegistry.register(skill)
     fun all(): List<Skill> = skillRegistry.all()
     fun get(id: String): Skill? = skillRegistry.get(id)
-    fun enable(id: String, enabled: Boolean): Boolean = skillRegistry.setEnabled(id, enabled)
+    fun enable(id: String): Boolean = skillRegistry.enable(id)
     fun disable(id: String): Boolean = skillRegistry.disable(id)
     fun remove(id: String): Boolean = skillRegistry.remove(id)
     fun find(name: String): Skill? = skillRegistry.find(name)
