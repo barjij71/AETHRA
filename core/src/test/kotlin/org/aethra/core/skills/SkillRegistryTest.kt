@@ -60,13 +60,53 @@ class SkillRegistryTest {
     }
 
     @Test
+    fun installDoesNotGrantTrustOrEnablement() {
+        val reg = createRegistry()
+        reg.register(Skill(id = "s1", name = "Test"))
+        assertTrue(reg.install("s1"))
+        val installed = reg.get("s1")!!
+        assertEquals(SkillState.INSTALLED, installed.state)
+        assertEquals(SkillTrustState.UNTRUSTED, installed.trustState)
+        assertFalse(installed.enabled)
+        assertFalse(installed.isActive)
+    }
+
+    @Test
     fun trustedInstalledSkillCanBeEnabled() {
         val reg = createRegistry()
-        reg.register(Skill(id = "s1", name = "Test", state = SkillState.INSTALLED))
+        reg.register(Skill(id = "s1", name = "Test"))
+        assertTrue(reg.install("s1"))
         assertTrue(reg.trust("s1"))
         assertFalse(reg.get("s1")!!.enabled)
         assertTrue(reg.enable("s1"))
         assertTrue(reg.get("s1")!!.isActive)
+    }
+
+    @Test
+    fun disableMovesSkillToDisabledLifecycleState() {
+        val reg = createRegistry()
+        reg.register(Skill(id = "s1", name = "Test"))
+        assertTrue(reg.install("s1"))
+        assertTrue(reg.trust("s1"))
+        assertTrue(reg.enable("s1"))
+        assertTrue(reg.disable("s1"))
+        assertEquals(SkillState.DISABLED, reg.get("s1")!!.state)
+        assertFalse(reg.get("s1")!!.enabled)
+        assertTrue(reg.enable("s1"))
+        assertEquals(SkillState.INSTALLED, reg.get("s1")!!.state)
+        assertTrue(reg.get("s1")!!.isActive)
+    }
+
+    @Test
+    fun markUpdateAvailableStopsExecutionUntilReenabled() {
+        val reg = createRegistry()
+        reg.register(Skill(id = "s1", name = "Test"))
+        assertTrue(reg.install("s1"))
+        assertTrue(reg.trust("s1"))
+        assertTrue(reg.enable("s1"))
+        assertTrue(reg.markUpdateAvailable("s1"))
+        assertEquals(SkillState.UPDATE_AVAILABLE, reg.get("s1")!!.state)
+        assertFalse(reg.get("s1")!!.enabled)
     }
 
     @Test
