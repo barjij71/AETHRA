@@ -3,7 +3,10 @@ name: Core Contract Tests
 on:
   push:
     branches:
-      - codex/phase-c-handoff
+      - main
+      - feature/**
+      - codex/**
+      - aethra/**
     paths:
       - 'core/**'
       - 'build.gradle*'
