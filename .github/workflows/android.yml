@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: ["feature/**", "codex/**"]
+    branches: ["main", "feature/**", "codex/**", "aethra/**"]
   workflow_dispatch:
 
 permissions:
