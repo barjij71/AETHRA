@@ -2,7 +2,7 @@ name: AETHRA Skill Core
 
 on:
   push:
-    branches: ["feature/skill-orchestration-architecture"]
+    branches: ["main", "feature/**", "codex/**", "aethra/**"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
