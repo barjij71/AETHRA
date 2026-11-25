@@ -467,40 +467,40 @@ class TaskEngine(
     }
 
     fun approve(taskId: String, granted: Boolean, reason: String) {
-        val shouldDrain = synchronized(lock) {
-            val task = tasks[taskId] ?: return
-            if (task.state != TaskState.WAITING_APPROVAL) return
+        // Approval is a security-relevant state transition. For denial it is
+        // terminal, so durability must complete before the approval event is
+        // published. Keep the non-suspending API, but perform the durable
+        // transition synchronously like cancel().
+        runBlocking {
+            val action = synchronized(lock) {
+                val task = tasks[taskId] ?: return@synchronized null
+                if (task.state != TaskState.WAITING_APPROVAL) return@synchronized null
 
-            val previous = task.state
-            if (!granted) {
-                task.updateState(TaskState.CANCELLED)
-                task.cancel()
-                // Phase 3: Persist BEFORE publishing terminal event (CANCELLED is terminal)
-                // Await persistence completion before publishing the terminal event.
-                scope.launch {
-                    persist()
-                    eventBus.publish(
-                        TaskEvent(
-                            "approval",
-                            System.currentTimeMillis(),
-                            task.id,
-                            previous,
-                            task.state,
-                            mapOf("granted" to "false", "reason" to reason)
-                        )
-                    )
-                }
-                false
-            } else {
-                transition(task, TaskState.APPROVED)
-                val canStart = running.size < maxConcurrent
-                if (canStart) {
-                    startTaskLocked(task, "approval_granted")
+                val previous = task.state
+                if (!granted) {
+                    task.updateState(TaskState.CANCELLED)
+                    task.cancel()
+                    Triple(task, previous, false)
                 } else {
-                    transition(task, TaskState.QUEUED)
-                    enqueue(task)
+                    transition(task, TaskState.APPROVED)
+                    val canStart = running.size < maxConcurrent
+                    if (canStart) {
+                        startTaskLocked(task, "approval_granted")
+                    } else {
+                        transition(task, TaskState.QUEUED)
+                        enqueue(task)
+                    }
+                    Triple(task, previous, canStart)
                 }
-                scope.launch { persist() }
+            }
+
+            if (action != null) {
+                val (task, previous, started) = action
+
+                // Durable state is established before exposing the approval
+                // result to observers. Persistence failures propagate to the
+                // caller and suppress the approval event.
+                persist()
                 eventBus.publish(
                     TaskEvent(
                         "approval",
@@ -508,14 +508,18 @@ class TaskEngine(
                         task.id,
                         previous,
                         task.state,
-                        mapOf("granted" to "true", "reason" to reason)
+                        mapOf(
+                            "granted" to granted.toString(),
+                            "reason" to reason
+                        )
                     )
                 )
-                !canStart
+
+                if (!granted || !started) {
+                    drainQueue()
+                }
             }
         }
-
-        if (shouldDrain) drainQueue()
     }
 
     fun cancel(taskId: String) {
