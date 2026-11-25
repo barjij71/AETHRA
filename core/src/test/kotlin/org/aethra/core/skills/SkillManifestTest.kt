@@ -97,7 +97,7 @@ class SkillManifestTest {
     }
 
     @Test
-    fun toSkillPreservesFields() {
+    fun toSkillEnforcesUntrustedExecutionState() {
         val m = SkillManifest(
             id = "t", name = "x", version = "1.0.0",
             source = SourceMetadata(type = "local"),
@@ -120,7 +120,9 @@ class SkillManifestTest {
         assertEquals(listOf("read"), s.requestedPermissions)
         assertEquals(listOf("android"), s.platforms)
         assertEquals(RiskClass.READ_ONLY, s.riskClass)
-        assertEquals(SkillState.VALID, s.state)
+        assertEquals(SkillState.DISCOVERED, s.state)
+        assertEquals(SkillTrustState.UNTRUSTED, s.trustState)
+        assertFalse(s.enabled)
         assertTrue(s.createdAt > 0)
         assertTrue(s.updatedAt > 0)
     }
