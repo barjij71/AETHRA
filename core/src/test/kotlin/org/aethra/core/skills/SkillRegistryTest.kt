@@ -3,6 +3,7 @@ package org.aethra.core.skills
 import org.aethra.core.domain.RiskClass
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.concurrent.ConcurrentHashMap
 
 /** Contract tests for the Core-owned skill trust boundary. */
 class SkillRegistryTest {
@@ -199,11 +200,21 @@ class SkillRegistryTest {
 
     @Test
     fun markUpdateAvailableRejectsUpdating() {
-        val reg = createRegistry()
+        val storage = CountingStorage()
+        val reg = SkillRegistry(storage)
         reg.register(Skill(id = "s1", name = "Test", state = SkillState.UPDATING))
+
+        // Record write count after registration, before the rejected call
+        val writesBefore = storage.writeCount
+
         assertFalse(reg.markUpdateAvailable("s1"))
-        assertEquals(SkillState.UPDATING, reg.get("s1")!!.state)
-        // No persistence mutation should occur
+        val stored = reg.get("s1")!!
+        assertEquals(SkillState.UPDATING, stored.state)
+        assertEquals(SkillTrustState.UNTRUSTED, stored.trustState)
+        assertFalse(stored.enabled)
+
+        // Assert no persistence write occurred for the rejected transition
+        assertEquals(writesBefore, storage.writeCount)
     }
 
     // ==================== ENABLE CONTRACT TESTS ====================
@@ -517,6 +528,28 @@ class SkillRegistryTest {
         assertThrows(SkillPersistenceException::class.java) {
             SkillRegistry(storage)
         }
+    }
+
+    private class CountingStorage : org.aethra.core.storage.Storage {
+        private val data = ConcurrentHashMap<String, String>()
+        var writeCount: Int = 0
+            private set
+
+        override suspend fun getString(key: String, defaultValue: String?): String? =
+            data[key] ?: defaultValue
+
+        override suspend fun setString(key: String, value: String) {
+            writeCount++
+            data[key] = value
+        }
+
+        override suspend fun getLong(key: String, defaultValue: Long?): Long? = defaultValue
+        override suspend fun setLong(key: String, value: Long) = Unit
+        override suspend fun getBoolean(key: String, defaultValue: Boolean?): Boolean? = defaultValue
+        override suspend fun setBoolean(key: String, value: Boolean) = Unit
+        override suspend fun getAll(): Map<String, String> = data.toMap()
+        override suspend fun remove(key: String) { data.remove(key) }
+        override suspend fun clear() { data.clear() }
     }
 
     private class FailingStorage : org.aethra.core.storage.Storage {
