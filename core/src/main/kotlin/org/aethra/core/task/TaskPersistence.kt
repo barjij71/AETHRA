@@ -52,10 +52,10 @@ class TaskPersistence(private val storage: Storage) {
      * Returns empty list only for legitimately empty storage (EMPTY).
      */
     suspend fun loadAll(): List<Task> {
-        val encoded = storage.getString(journalKey) ?: return emptyList()
-        if (encoded.isBlank()) return emptyList()
-
         return try {
+            val encoded = storage.getString(journalKey) ?: return emptyList()
+            if (encoded.isBlank()) return emptyList()
+
             json.decodeFromString<List<PersistedTask>>(encoded).map { snapshot ->
                 val task = Task(
                     goal = snapshot.goal,
