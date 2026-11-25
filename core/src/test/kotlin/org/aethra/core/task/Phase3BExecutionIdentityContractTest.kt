@@ -42,7 +42,6 @@ class Phase3BExecutionIdentityContractTest {
         val bId = taskB.id
         val bAttemptId = taskB.executionAttemptId
         val bAttemptCounter = taskB.attemptCounter
-        val bRetries = taskB.retriesUsed
 
         persistence.saveAll(listOf(taskA, taskB))
         val restored = persistence.loadAll()
