@@ -108,4 +108,49 @@ class SkillRegistryTest {
         val reg = createRegistry()
         assertFalse(reg.remove("nonexistent"))
     }
+
+    @Test
+    fun persistenceFailureDoesNotCommitEnablement() {
+        val storage = FailingStorage()
+        val reg = SkillRegistry(storage)
+        reg.register(Skill(id = "persist", name = "Persist", state = SkillState.INSTALLED))
+        assertTrue(reg.trust("persist"))
+        storage.failWrites = true
+
+        assertThrows(SkillPersistenceException::class.java) {
+            reg.enable("persist")
+        }
+        assertFalse(reg.get("persist")!!.enabled)
+    }
+
+    @Test
+    fun corruptPersistedJournalFailsClosed() {
+        val storage = FailingStorage()
+        storage.raw = "{not-json"
+        assertThrows(SkillPersistenceException::class.java) {
+            SkillRegistry(storage)
+        }
+    }
+
+    private class FailingStorage : org.aethra.core.storage.Storage {
+        var raw: String? = null
+        var failWrites: Boolean = false
+
+        override suspend fun getString(key: String, defaultValue: String?): String? =
+            raw ?: defaultValue
+
+        override suspend fun setString(key: String, value: String) {
+            if (failWrites) throw IllegalStateException("write failed")
+            raw = value
+        }
+
+        override suspend fun getLong(key: String, defaultValue: Long?): Long? = defaultValue
+        override suspend fun setLong(key: String, value: Long) = Unit
+        override suspend fun getBoolean(key: String, defaultValue: Boolean?): Boolean? = defaultValue
+        override suspend fun setBoolean(key: String, value: Boolean) = Unit
+        override suspend fun getAll(): Map<String, String> = emptyMap()
+        override suspend fun remove(key: String) = Unit
+        override suspend fun clear() { raw = null }
+    }
+
 }
