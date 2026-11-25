@@ -164,7 +164,7 @@ class Phase3CTerminalDurabilityContractTest {
             assertEquals(TaskState.WAITING_APPROVAL, task.state)
 
             storage.gate(TaskState.CANCELLED)
-            engine.approve(task.id, granted = false, reason = "denied")
+            val approveJob = async { engine.approve(task.id, granted = false, reason = "denied") }
             storage.awaitWriteStarted()
 
             assertTrue(
@@ -174,6 +174,7 @@ class Phase3CTerminalDurabilityContractTest {
             assertTrue(events.events("approval").isEmpty())
 
             storage.release()
+            approveJob.await()
             val event = events.awaitEvent("approval")
             assertEquals(task.id, event.taskId)
             assertEquals(TaskState.CANCELLED, event.newState)

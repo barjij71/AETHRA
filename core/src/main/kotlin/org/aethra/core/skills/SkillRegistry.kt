@@ -1,9 +1,9 @@
 package org.aethra.core.skills
 
-import org.aethra.core.domain.RiskClass
-import kotlinx.serialization.Serializable
-import org.aethra.core.storage.Storage
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
+import org.aethra.core.domain.RiskClass
+import org.aethra.core.storage.Storage
 
 /**
  * Core-owned registry of installed skills.
@@ -12,6 +12,9 @@ import kotlinx.coroutines.runBlocking
  * internal state and must be granted by Core verification code. Manifest flags,
  * imported instructions, or callers outside the Core module cannot self-enable
  * a skill.
+ *
+ * Persistence is fail-closed: a state transition is committed in memory only
+ * after the corresponding durable journal write succeeds.
  */
 class SkillRegistry(private val storage: Storage) {
     private val skills = LinkedHashMap<String, Skill>()
@@ -21,12 +24,6 @@ class SkillRegistry(private val storage: Storage) {
         loadPersisted()
     }
 
-    /**
-     * Parse and register an external manifest through the Core trust boundary.
-     *
-     * Parsing validates the wire contract only; registration deliberately
-     * converts the candidate to UNTRUSTED + disabled state before persistence.
-     */
     fun registerManifest(rawManifest: String): Result<Skill> = runCatching {
         val manifest = SkillManifest.parse(rawManifest).getOrThrow()
         val skill = manifest.toUntrustedSkill()
@@ -44,7 +41,12 @@ class SkillRegistry(private val storage: Storage) {
                 updatedAt = System.currentTimeMillis()
             )
             skills[merged.id] = merged
-            persistState()
+            try {
+                persistState()
+            } catch (e: Exception) {
+                skills.remove(merged.id)
+                throw SkillPersistenceException("Failed to persist skill registration", e)
+            }
             return true
         }
     }
@@ -74,8 +76,14 @@ class SkillRegistry(private val storage: Storage) {
             if (skill.trustState != SkillTrustState.TRUSTED) return false
             if (!skill.state.isInstalled) return false
             if (skill.enabled) return true
+
             skills[id] = skill.copy(enabled = true, updatedAt = System.currentTimeMillis())
-            persistState()
+            try {
+                persistState()
+            } catch (e: Exception) {
+                skills[id] = skill
+                throw SkillPersistenceException("Failed to persist skill enablement", e)
+            }
             return true
         }
     }
@@ -84,8 +92,14 @@ class SkillRegistry(private val storage: Storage) {
         synchronized(lock) {
             val skill = skills[id] ?: return false
             if (!skill.enabled) return true
+
             skills[id] = skill.copy(enabled = false, updatedAt = System.currentTimeMillis())
-            persistState()
+            try {
+                persistState()
+            } catch (e: Exception) {
+                skills[id] = skill
+                throw SkillPersistenceException("Failed to persist skill disablement", e)
+            }
             return true
         }
     }
@@ -97,12 +111,18 @@ class SkillRegistry(private val storage: Storage) {
             val enabled = trustState == SkillTrustState.TRUSTED &&
                 skill.state.isInstalled &&
                 skill.enabled
-            skills[id] = skill.copy(
+            val updated = skill.copy(
                 trustState = trustState,
                 enabled = enabled,
                 updatedAt = System.currentTimeMillis()
             )
-            persistState()
+            skills[id] = updated
+            try {
+                persistState()
+            } catch (e: Exception) {
+                skills[id] = skill
+                throw SkillPersistenceException("Failed to persist skill trust transition", e)
+            }
             return true
         }
     }
@@ -115,9 +135,13 @@ class SkillRegistry(private val storage: Storage) {
 
     fun remove(id: String): Boolean {
         synchronized(lock) {
-            if (!skills.containsKey(id)) return false
-            skills.remove(id)
-            persistState()
+            val previous = skills.remove(id) ?: return false
+            try {
+                persistState()
+            } catch (e: Exception) {
+                skills[id] = previous
+                throw SkillPersistenceException("Failed to persist skill removal", e)
+            }
             return true
         }
     }
@@ -156,55 +180,59 @@ class SkillRegistry(private val storage: Storage) {
         }
         val raw = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
             .encodeToString(entries)
-        try {
-            runBlocking { storage.setString("aethra.skills.v1", raw) }
-        } catch (_: Exception) {
-            // Persistence failure is handled by the storage boundary.
-        }
+        runBlocking { storage.setString("aethra.skills.v1", raw) }
     }
 
     private fun loadPersisted() {
-        try {
-            val raw = runBlocking { storage.getString("aethra.skills.v1") }
-                ?: return
-            if (raw.isBlank()) return
+        val raw = runBlocking { storage.getString("aethra.skills.v1") } ?: return
+        if (raw.isBlank()) return
 
-            val entries = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val entries = try {
+            kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
                 .decodeFromString<List<SkillEntry>>(raw)
+        } catch (e: Exception) {
+            throw SkillPersistenceException("Skill journal is corrupt or incompatible", e)
+        }
 
-            for (entry in entries) {
-                val executable = entry.trustState == SkillTrustState.TRUSTED &&
-                    entry.enabled &&
-                    entry.state.isInstalled
+        val restored = LinkedHashMap<String, Skill>()
+        for (entry in entries) {
+            val executable = entry.trustState == SkillTrustState.TRUSTED &&
+                entry.enabled &&
+                entry.state.isInstalled
 
-                val skill = Skill(
-                    id = entry.id,
-                    name = entry.name,
-                    version = entry.version,
-                    source = entry.source,
-                    description = entry.description,
-                    entrypoints = entry.entrypoints,
-                    capabilities = entry.capabilities,
-                    requestedPermissions = entry.requestedPermissions,
-                    dependencies = entry.dependencies,
-                    platforms = entry.platforms,
-                    riskClass = entry.riskClass,
-                    integrity = entry.integrity,
-                    enabled = executable,
-                    trustState = entry.trustState,
-                    state = entry.state,
-                    createdAt = entry.createdAt,
-                    updatedAt = entry.updatedAt
-                )
-                synchronized(lock) {
-                    skills[skill.id] = skill
-                }
+            val skill = Skill(
+                id = entry.id,
+                name = entry.name,
+                version = entry.version,
+                source = entry.source,
+                description = entry.description,
+                entrypoints = entry.entrypoints,
+                capabilities = entry.capabilities,
+                requestedPermissions = entry.requestedPermissions,
+                dependencies = entry.dependencies,
+                platforms = entry.platforms,
+                riskClass = entry.riskClass,
+                integrity = entry.integrity,
+                enabled = executable,
+                trustState = entry.trustState,
+                state = entry.state,
+                createdAt = entry.createdAt,
+                updatedAt = entry.updatedAt
+            )
+            require(restored.put(skill.id, skill) == null) {
+                "Duplicate skill id in persisted journal: ${skill.id}"
             }
-        } catch (_: Exception) {
+        }
+
+        synchronized(lock) {
             skills.clear()
+            skills.putAll(restored)
         }
     }
 }
+
+class SkillPersistenceException(message: String, cause: Throwable? = null) :
+    IllegalStateException(message, cause)
 
 @Serializable
 data class SkillEntry(
@@ -215,8 +243,8 @@ data class SkillEntry(
     val description: String = "",
     val entrypoints: List<String> = emptyList(),
     val capabilities: List<String> = emptyList(),
-    val requestedPermissions: List<String> = emptyList(),
     val dependencies: List<String> = emptyList(),
+    val requestedPermissions: List<String> = emptyList(),
     val platforms: List<String> = emptyList(),
     val riskClass: RiskClass = RiskClass.READ_ONLY,
     val integrity: IntegrityInfo? = null,
