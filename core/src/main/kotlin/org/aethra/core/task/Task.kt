@@ -11,7 +11,8 @@ class Task(
     role: String = "assistant",
     riskClass: RiskClass = RiskClass.READ_ONLY,
     dependsOn: List<String> = emptyList(),
-    var onCompleted: (Task) -> Unit = {}
+    var onCompleted: (Task) -> Unit = {},
+    postconditions: List<Postcondition> = emptyList()
 ) {
     var id: String = UUID.randomUUID().toString()
         private set
@@ -22,6 +23,15 @@ class Task(
     var riskClass: RiskClass = riskClass
         private set
     val dependsOn: List<String> = dependsOn
+
+    /**
+     * Core-declared postconditions that must hold for this task's objective to
+     * be verified. They are supplied by Core (the task creator), never by the
+     * Provider, Runner, Agent, or Model.
+     */
+    var postconditions: List<Postcondition> = postconditions
+        private set
+
     var createdAt: Long = System.currentTimeMillis()
         private set
     var updatedAt: Long = createdAt
@@ -40,6 +50,16 @@ class Task(
     var isExecuted: Boolean
         get() = _executed.get()
         set(value) { _executed.set(value) }
+
+    // Phase 6: Verification state (Core-owned verdict + evidence)
+    var verificationOutcome: VerificationOutcome = VerificationOutcome.UNKNOWN
+        private set
+    var verificationEvidence: List<EvidenceItem> = emptyList()
+        private set
+    var verificationPostconditions: List<PostconditionResult> = emptyList()
+        private set
+    var isVerified: Boolean = false
+        private set
 
     // Phase 3: Execution Identity
     // Task.id = stable logical task identity
@@ -74,9 +94,47 @@ class Task(
     }
 
     private var _completed = false
+
+    /**
+     * Marks the task COMPLETED without a Core verification verdict.
+     *
+     * Retained for internal/test use only. The TaskEngine never calls this on
+     * the execution path: it calls [completeWithVerification] so that every
+     * task completion carries a Core-owned verification verdict.
+     */
     fun complete() {
         if (_completed) return
         _completed = true
+        state = TaskState.COMPLETED
+    }
+
+    /**
+     * Records the Core-owned verification verdict and its evidence on this task.
+     *
+     * The verdict is stored before the terminal transition so that the durable
+     * journal always carries the evidence that justified the task's outcome.
+     */
+    fun recordVerification(verification: TaskVerification) {
+        verificationOutcome = verification.outcome
+        verificationEvidence = verification.evidence
+        verificationPostconditions = verification.postconditionResults
+    }
+
+    /**
+     * Completes the task using a Core-owned verification verdict.
+     *
+     * Only a [VerificationOutcome.VERIFIED] verdict may complete a task.
+     * A FAILED/UNKNOWN/UNVERIFIABLE verdict leaves the task in RUNNING so the
+     * TaskEngine can retry or fail it explicitly.
+     */
+    fun completeWithVerification(verification: TaskVerification) {
+        verificationOutcome = verification.outcome
+        verificationEvidence = verification.evidence
+        verificationPostconditions = verification.postconditionResults
+        if (verification.outcome != VerificationOutcome.VERIFIED) return
+        if (_completed) return
+        _completed = true
+        isVerified = true
         state = TaskState.COMPLETED
     }
 
@@ -105,6 +163,7 @@ class Task(
         _cancelled = false
         note = ""
         retriesUsed = 0
+        clearVerification()
     }
 
     /** Start a new execution attempt (for process-death recovery). */
@@ -118,6 +177,14 @@ class Task(
         note = ""
         retriesUsed = 0
         state = TaskState.QUEUED
+        clearVerification()
+    }
+
+    private fun clearVerification() {
+        verificationOutcome = VerificationOutcome.UNKNOWN
+        verificationEvidence = emptyList()
+        verificationPostconditions = emptyList()
+        isVerified = false
     }
 
     fun isCancelled(): Boolean = _cancelled
@@ -151,7 +218,13 @@ class Task(
         persistedExecuted: Boolean,
         persistedExecutionAttemptId: String? = null,
         persistedAttemptCounter: Int = 1,
-        persistedRetriesUsed: Int = 0
+        persistedRetriesUsed: Int = 0,
+        // Phase 6: Verification state
+        persistedVerificationOutcome: VerificationOutcome = VerificationOutcome.UNKNOWN,
+        persistedVerificationEvidence: List<String> = emptyList(),
+        persistedVerificationPostconditions: List<PersistedPostconditionResult> = emptyList(),
+        persistedIsVerified: Boolean = false,
+        persistedPostconditions: List<Postcondition> = emptyList()
     ) {
         id = persistedId
         createdAt = persistedCreatedAt
@@ -164,6 +237,22 @@ class Task(
         executionAttemptId = persistedExecutionAttemptId ?: UUID.randomUUID().toString()
         attemptCounter = persistedAttemptCounter
         retriesUsed = persistedRetriesUsed
+        postconditions = persistedPostconditions
+        verificationOutcome = persistedVerificationOutcome
+        verificationEvidence = persistedVerificationEvidence.map(EvidenceItem::decode)
+        verificationPostconditions = persistedVerificationPostconditions.map {
+            PostconditionResult(
+                postcondition = Postcondition(
+                    name = it.name,
+                    description = it.description,
+                    evidenceType = it.evidenceType,
+                    expectedValue = it.expectedValue
+                ),
+                satisfied = it.satisfied,
+                evidenceMissing = it.evidenceMissing
+            )
+        }
+        isVerified = persistedIsVerified
 
         when (persistedState) {
             TaskState.RUNNING,

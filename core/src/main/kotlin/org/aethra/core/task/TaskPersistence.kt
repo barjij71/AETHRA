@@ -40,7 +40,29 @@ class TaskPersistence(private val storage: Storage) {
                 isExecuted = task.isExecuted,
                 executionAttemptId = task.executionAttemptId,
                 attemptCounter = task.attemptCounter,
-                retriesUsed = task.retriesUsed
+                retriesUsed = task.retriesUsed,
+                // Phase 6: Verification state
+                verificationOutcome = task.verificationOutcome.serializedName,
+                verificationEvidence = task.verificationEvidence.map { it.encode() },
+                verificationPostconditions = task.verificationPostconditions.map {
+                    PersistedPostconditionResult(
+                        name = it.postcondition.name,
+                        description = it.postcondition.description,
+                        evidenceType = it.postcondition.evidenceType,
+                        expectedValue = it.postcondition.expectedValue,
+                        satisfied = it.satisfied,
+                        evidenceMissing = it.evidenceMissing
+                    )
+                },
+                isVerified = task.isVerified,
+                postconditions = task.postconditions.map {
+                    PersistedPostcondition(
+                        name = it.name,
+                        description = it.description,
+                        evidenceType = it.evidenceType,
+                        expectedValue = it.expectedValue
+                    )
+                }
             )
         }
         storage.setString(journalKey, json.encodeToString(snapshot))
@@ -76,7 +98,20 @@ class TaskPersistence(private val storage: Storage) {
                     persistedExecuted = snapshot.isExecuted,
                     persistedExecutionAttemptId = snapshot.executionAttemptId,
                     persistedAttemptCounter = snapshot.attemptCounter,
-                    persistedRetriesUsed = snapshot.retriesUsed
+                    persistedRetriesUsed = snapshot.retriesUsed,
+                    // Phase 6: Verification state
+                    persistedVerificationOutcome = VerificationOutcome.fromSerialized(snapshot.verificationOutcome),
+                    persistedVerificationEvidence = snapshot.verificationEvidence,
+                    persistedVerificationPostconditions = snapshot.verificationPostconditions,
+                    persistedIsVerified = snapshot.isVerified,
+                    persistedPostconditions = snapshot.postconditions.map {
+                        Postcondition(
+                            name = it.name,
+                            description = it.description,
+                            evidenceType = it.evidenceType,
+                            expectedValue = it.expectedValue
+                        )
+                    }
                 )
                 task
             }
@@ -122,5 +157,31 @@ private data class PersistedTask(
     val isExecuted: Boolean,
     val executionAttemptId: String = "",
     val attemptCounter: Int = 1,
-    val retriesUsed: Int = 0
+    val retriesUsed: Int = 0,
+    // Phase 6: Verification state
+    val verificationOutcome: String = VerificationOutcome.UNKNOWN.serializedName,
+    val verificationEvidence: List<String> = emptyList(),
+    val verificationPostconditions: List<PersistedPostconditionResult> = emptyList(),
+    val isVerified: Boolean = false,
+    val postconditions: List<PersistedPostcondition> = emptyList()
+)
+
+/** Durable form of a Core-declared [Postcondition]. */
+@Serializable
+data class PersistedPostcondition(
+    val name: String,
+    val description: String,
+    val evidenceType: String,
+    val expectedValue: String? = null
+)
+
+/** Durable form of a [PostconditionResult]. */
+@Serializable
+data class PersistedPostconditionResult(
+    val name: String,
+    val description: String,
+    val evidenceType: String,
+    val expectedValue: String? = null,
+    val satisfied: Boolean,
+    val evidenceMissing: Boolean
 )

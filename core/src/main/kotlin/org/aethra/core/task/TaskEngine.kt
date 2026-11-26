@@ -11,6 +11,9 @@ import org.aethra.core.task.TaskExecutionException
 import org.aethra.core.runtime.events.EventBus
 import org.aethra.core.storage.Storage
 import org.aethra.core.task.Task
+import org.aethra.core.task.TaskVerifier
+import org.aethra.core.task.VerificationOutcome
+import org.aethra.core.task.EvidenceItem
 import java.util.LinkedHashSet
 import java.util.UUID
 
@@ -26,7 +29,13 @@ class TaskEngine(
     private val storage: Storage,
     private val eventBus: EventBus,
     private val runner: TaskRunner,
-    private val maxConcurrent: Int = 4
+    private val maxConcurrent: Int = 4,
+    /**
+     * Phase 6: the Core-owned verification authority. It is injected so that
+     * Core can substitute a stricter policy, but it is never supplied by a
+     * Provider, Runner, Agent, or Model.
+     */
+    private val verifier: TaskVerifier = TaskVerifier()
 ) {
     private val tasks = HashMap<String, Task>()
     private val lock = Any()
@@ -78,9 +87,14 @@ class TaskEngine(
         goal: String,
         role: String = "assistant",
         riskClass: RiskClass = RiskClass.READ_ONLY,
-        dependsOn: List<String> = emptyList()
+        dependsOn: List<String> = emptyList(),
+        /**
+         * Phase 6: Core-declared postconditions that must hold for the task's
+         * objective to be verified. Declared by Core only.
+         */
+        postconditions: List<Postcondition> = emptyList()
     ): Task {
-        val task = Task(goal, role, riskClass, dependsOn)
+        val task = Task(goal, role, riskClass, dependsOn, postconditions = postconditions)
         synchronized(lock) {
             require(dependsOn.all { tasks.containsKey(it) }) {
                 "Task dependency not found"
@@ -283,8 +297,6 @@ class TaskEngine(
 
     // --- Dependency scheduling integration ---
 
-
-
     /**
      * Wake up any dependent tasks whose dependencies are now all COMPLETED.
      * Only tasks in WAITING_DEPENDENCY can be woken; each is transitioned to
@@ -354,13 +366,15 @@ class TaskEngine(
         wakeReadyDependents()
     }
 
-    private suspend fun execute(task: org.aethra.core.task.Task) {
+    @Suppress("NestedBlockCount", "LongMethod", "ComplexMethod")
+    private suspend fun execute(task: Task) {
         // Startup gate: if the task was cancelled or paused between the start
         // dispatch and the first coroutine run, do not begin a fresh cycle.
         // A cancelled task must never execute work outside the approval chain.
         if (task.isCancelled() || task.state != TaskState.RUNNING) return
+        
         // Atomic claim of the one-shot cycle: exactly one racing duplicate
-        // proceeds; losers return and leave the guard false so a later pause/
+        // proceeds; losers return and leave the guard false so a later pause/\
         // resume or explicit retry can start a clean cycle.
         if (!task.claimExecution()) return
 
@@ -391,18 +405,98 @@ class TaskEngine(
             val executionError = returnedFailure ?: failure
 
             if (executionError == null) {
-                task.complete()
-                // Phase 3: Persist BEFORE publishing terminal event
-                persist()
-                eventBus.publish(TaskEvent(
-                    "execution_completed", System.currentTimeMillis(), task.id,
-                    TaskState.RUNNING, TaskState.COMPLETED,
-                    mapOf("reason" to "success", "attempts" to (task.retriesUsed + 1).toString())
-                ))
-                onTaskTerminal(task.id)
-                return
+                // Phase 6: Core-owned verification gate.
+                // The runner result is INPUT EVIDENCE, never a verdict. Only the
+                // Core verifier may decide that the objective was achieved, and
+                // only a VERIFIED outcome may complete the task.
+                val verification = verifier.verify(task, result!!, task.executionAttemptId)
+                task.recordVerification(verification)
+
+                when (verification.outcome) {
+                    VerificationOutcome.VERIFIED -> {
+                        task.completeWithVerification(verification)
+                        // Phase 3: Persist BEFORE publishing terminal event
+                        persist()
+                        eventBus.publish(TaskEvent(
+                            "execution_completed", System.currentTimeMillis(), task.id,
+                            TaskState.RUNNING, TaskState.COMPLETED,
+                            mapOf(
+                                "reason" to "success",
+                                "verified" to "true",
+                                "verification_outcome" to verification.outcome.serializedName,
+                                "attempts" to (task.retriesUsed + 1).toString()
+                            )
+                        ))
+                        onTaskTerminal(task.id)
+                        return
+                    }
+
+                    VerificationOutcome.FAILED,
+                    VerificationOutcome.UNKNOWN -> {
+                        // The objective was not confirmed. This attempt counts against
+                        // the retry budget: a later attempt may produce the missing or
+                        // contradicting evidence.
+                        if (task.retriesUsed < task.retryBudget.coerceAtLeast(0)) {
+                            val retryCount = task.recordRetry()
+                            val waitMs = nextBackoffMs.coerceAtMost(30_000L)
+                            eventBus.publish(TaskEvent(
+                                "retry_scheduled", System.currentTimeMillis(), task.id,
+                                TaskState.RUNNING, TaskState.RUNNING,
+                                mapOf(
+                                    "attempt" to (retryCount + 1).toString(),
+                                    "retry" to retryCount.toString(),
+                                    "delay_ms" to waitMs.toString(),
+                                    "reason" to "verification ${verification.outcome.serializedName.lowercase()}",
+                                    "verification_outcome" to verification.outcome.serializedName,
+                                    "verification_reason" to (verification.details["reason"] ?: "unknown")
+                                )
+                            ))
+                            if (waitMs > 0) delay(waitMs)
+                            if (task.state != TaskState.RUNNING || task.isCancelled()) return
+                            nextBackoffMs = if (nextBackoffMs >= 15_000L) {
+                                30_000L
+                            } else {
+                                nextBackoffMs * 2
+                            }
+                            continue
+                        }
+                        val reason = verification.details["reason"] ?: "verification ${verification.outcome.serializedName.lowercase()}"
+                        task.fail(reason)
+                        persist()
+                        eventBus.publish(TaskEvent(
+                            "execution_failed", System.currentTimeMillis(), task.id,
+                            TaskState.RUNNING, TaskState.FAILED,
+                            mapOf(
+                                "reason" to "verification ${verification.outcome.serializedName.lowercase()}",
+                                "verification_outcome" to verification.outcome.serializedName,
+                                "verification_reason" to reason,
+                                "attempts" to (task.retriesUsed + 1).toString()
+                            )
+                        ))
+                        onTaskTerminal(task.id)
+                        return
+                    }
+
+                    VerificationOutcome.UNVERIFIABLE -> {
+                        // No Core policy can decide this task. Retrying cannot help.
+                        task.fail("verification not supported for this task type")
+                        persist()
+                        eventBus.publish(TaskEvent(
+                            "execution_failed", System.currentTimeMillis(), task.id,
+                            TaskState.RUNNING, TaskState.FAILED,
+                            mapOf(
+                                "reason" to "verification unverifiable",
+                                "verification_outcome" to verification.outcome.serializedName,
+                                "attempts" to (task.retriesUsed + 1).toString()
+                            )
+                        ))
+                        onTaskTerminal(task.id)
+                        return
+                    }
+                }
             }
 
+            // Handle runner failures, cancellations, timeouts
             if (returnedFailure is CancellationException) {
                 // A runner may report cancellation through Result.failure().
                 // That is a terminal outcome, not retryable work: leave the
@@ -500,7 +594,7 @@ class TaskEngine(
                 // Durable state is established before exposing the approval
                 // result to observers. Persistence failures propagate to the
                 // caller and suppress the approval event.
-                persist()
+               persist()
                 eventBus.publish(
                     TaskEvent(
                         "approval",
