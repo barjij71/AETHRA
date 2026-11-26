@@ -5,6 +5,7 @@ import org.aethra.core.domain.AuditEntry
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
+import org.aethra.core.task.ExecutionPolicy
 import org.aethra.core.task.Task
 import org.aethra.core.task.TaskRunner
 
@@ -50,9 +51,13 @@ class ToolTaskRunner(
         val registeredTool = toolRegistry.get(toolId)
             ?: return Result.failure(IllegalStateException("resolved tool not registered: $toolId"))
 
-        // Handle permission/approval for sensitive tools
-        if (registeredTool.requiresSensitiveApproval) {
-            val permissionResult = checkPermission(task, registeredTool)
+        // Determine if authorization/execution policy check is required
+        val requiresAuthorization = registeredTool.requiresSensitiveApproval ||
+                (task.riskClass.level >= RiskClass.SENSITIVE.level)
+
+        // Handle permission/approval for tools requiring authorization
+        if (requiresAuthorization) {
+            val permissionResult = checkAuthorization(task, registeredTool)
             if (permissionResult.isFailure) {
                 return permissionResult
             }
@@ -69,10 +74,14 @@ class ToolTaskRunner(
             requester = "core.runtime"
         )
 
+        // Require ToolExecutor for actual execution - no silent fallback
+        val executor = toolExecutor ?: return Result.failure(
+            IllegalStateException("ToolExecutor not configured for tool: ${tool.id}")
+        )
+
         // Execute the tool
         val result = try {
-            val executionResult = toolExecutor?.execute(request)
-                ?: executeDefault(tool, request)
+            val executionResult = executor.execute(request)
 
             mapOf<String, Any>(
                 "success" to executionResult.success.toString(),
@@ -95,50 +104,40 @@ class ToolTaskRunner(
     }
 
     /**
-     * Default execution path when no ToolExecutor is configured.
+     * Check authorization for tool execution.
      *
-     * This provides a basic execution contract that can be extended by platform
-     * implementations without redesigning TaskEngine.
+     * This verifies:
+     * 1. ExecutionPolicy compliance
+     * 2. PermissionBroker approval if required
      */
-    private suspend fun executeDefault(
-        tool: Tool,
-        request: ToolExecutionRequest
-    ): ToolExecutionResult {
-        // Default implementation - tools can be executed by custom ToolExecutor
-        // For now, we return a "not implemented" result
-        return ToolExecutionResult(
-            toolId = tool.id,
-            success = false,
-            output = emptyMap(),
-            error = "Tool executor not configured for tool: ${tool.id}",
-            evidence = listOf("tool:not_configured@${tool.id}")
-        )
-    }
-
-    /**
-     * Check permission for sensitive tools.
-     */
-    private suspend fun checkPermission(
+    private suspend fun checkAuthorization(
         task: Task,
         tool: Tool
     ): Result<Map<String, Any>> {
-        val broker = permissionBroker ?: run {
-            val entry = createAuditEntry(
-                operation = "tool.permission.blocked",
-                target = task.id,
-                toolId = tool.id,
-                risk = tool.riskClass,
-                decision = "DENIED",
-                outcome = "missing_broker"
-            )
-            auditLog.record(entry)
-            return Result.failure(IllegalStateException("permission_required:no_permission_broker"))
+        // Phase 7: Enforce ExecutionPolicy based on tool metadata
+        val policyDecision = evaluatePolicy(tool, task)
+        if (policyDecision.isFailure) {
+            return policyDecision
         }
 
-        val requestId = task.id
-        val existing = broker.getRequest(requestId)
+        // Check if PermissionBroker is required based on tool risk
+        if (tool.requiresSensitiveApproval) {
+            val broker = permissionBroker ?: run {
+                val entry = createAuditEntry(
+                    operation = "tool.permission.blocked",
+                    target = task.id,
+                    toolId = tool.id,
+                    risk = tool.riskClass,
+                    decision = "DENIED",
+                    outcome = "missing_broker"
+                )
+                auditLog.record(entry)
+                return Result.failure(IllegalStateException("permission_required:no_permission_broker"))
+            }
 
-        if (task.riskClass.level >= RiskClass.SENSITIVE.level) {
+            val requestId = task.id
+            val existing = broker.getRequest(requestId)
+
             val approvalRequest = existing ?: broker.requestApproval(
                 requester = "aethra.runtime",
                 risk = tool.riskClass,
@@ -181,6 +180,48 @@ class ToolTaskRunner(
             outcome = "policy_allowed"
         )
         auditLog.record(auditEntry)
+
+        return Result.success(emptyMap())
+    }
+
+    /**
+     * Evaluate ExecutionPolicy for the tool.
+     *
+     * Returns failure if policy denies execution.
+     */
+    private suspend fun evaluatePolicy(tool: Tool, task: Task): Result<Map<String, Any>> {
+        // Map Tool risk to ExecutionPolicy
+        val toolPolicy = when (tool.riskClass) {
+            RiskClass.READ_ONLY -> ExecutionPolicy.READ_ONLY
+            RiskClass.REVERSIBLE -> ExecutionPolicy.REVERSIBLE
+            RiskClass.SENSITIVE -> ExecutionPolicy.SENSITIVE
+            RiskClass.DESTRUCTIVE -> ExecutionPolicy.DESTRUCTIVE
+        }
+
+        // Map Task risk to ExecutionPolicy
+        val taskPolicy = when (task.riskClass) {
+            RiskClass.READ_ONLY -> ExecutionPolicy.READ_ONLY
+            RiskClass.REVERSIBLE -> ExecutionPolicy.REVERSIBLE
+            RiskClass.SENSITIVE -> ExecutionPolicy.SENSITIVE
+            RiskClass.DESTRUCTIVE -> ExecutionPolicy.DESTRUCTIVE
+        }
+
+        // Policy allows if tool policy <= task policy (higher risk task can run lower risk tools)
+        // But tools requiring sensitive approval must be authorized regardless
+        if (toolPolicy.ordinal > taskPolicy.ordinal && !tool.requiresSensitiveApproval) {
+            val entry = createAuditEntry(
+                operation = "tool.policy.denied",
+                target = task.id,
+                toolId = tool.id,
+                risk = tool.riskClass,
+                decision = "DENIED",
+                outcome = "policy_violation"
+            )
+            auditLog.record(entry)
+            return Result.failure(IllegalStateException(
+                "execution_denied:tool_risk_${tool.riskClass} exceeds_task_risk_${task.riskClass}"
+            ))
+        }
 
         return Result.success(emptyMap())
     }
