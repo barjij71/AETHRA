@@ -3,9 +3,10 @@ package org.aethra.core.tools
 import kotlinx.coroutines.CancellationException
 import org.aethra.core.domain.AuditEntry
 import org.aethra.core.domain.RiskClass
+import org.aethra.core.runtime.ExecutionMode
+import org.aethra.core.runtime.ExecutionModeStore
 import org.aethra.core.security.AuditLog
 import org.aethra.core.security.PermissionBroker
-import org.aethra.core.task.ExecutionPolicy
 import org.aethra.core.task.Task
 import org.aethra.core.task.TaskRunner
 
@@ -16,13 +17,14 @@ import org.aethra.core.task.TaskRunner
  * authorization, and produces results compatible with TaskEngine's verification path.
  *
  * The execution path follows:
- *   Task → ToolRegistry → ExecutionPolicy → ToolExecutor → Result
+ *   Task → ToolRegistry → PolicyEngine → PermissionBroker (if required) → ToolExecutor → Result
  *
  * This is the Phase 7 Core contract that connects Skills to executable Capabilities
  * without bypassing TaskEngine's existing authority structure.
  */
 class ToolTaskRunner(
     private val toolRegistry: ToolRegistry,
+    private val executionModeStore: ExecutionModeStore,
     private val permissionBroker: PermissionBroker? = null,
     private val auditLog: AuditLog,
     private val toolExecutor: ToolExecutor? = null
@@ -51,16 +53,10 @@ class ToolTaskRunner(
         val registeredTool = toolRegistry.get(toolId)
             ?: return Result.failure(IllegalStateException("resolved tool not registered: $toolId"))
 
-        // Determine if authorization/execution policy check is required
-        val requiresAuthorization = registeredTool.requiresSensitiveApproval ||
-                (task.riskClass.level >= RiskClass.SENSITIVE.level)
-
-        // Handle permission/approval for tools requiring authorization
-        if (requiresAuthorization) {
-            val permissionResult = checkAuthorization(task, registeredTool)
-            if (permissionResult.isFailure) {
-                return permissionResult
-            }
+        // Check authorization for the tool (mode-aware policy and permission check)
+        val authResult = checkAuthorization(task, registeredTool)
+        if (authResult.isFailure) {
+            return authResult
         }
 
         // Create execution request
@@ -108,20 +104,20 @@ class ToolTaskRunner(
      *
      * This verifies:
      * 1. ExecutionPolicy compliance
-     * 2. PermissionBroker approval if required
+     * 2. PermissionBroker approval if required (based on ExecutionMode)
      */
     private suspend fun checkAuthorization(
         task: Task,
         tool: Tool
     ): Result<Map<String, Any>> {
-        // Phase 7: Enforce ExecutionPolicy based on tool metadata
+        // Phase 7: Enforce policy based on tool metadata
         val policyDecision = evaluatePolicy(tool, task)
         if (policyDecision.isFailure) {
             return policyDecision
         }
 
-        // Check if PermissionBroker is required based on tool risk
-        if (tool.requiresSensitiveApproval) {
+        // Check if PermissionBroker is required based on tool risk AND execution mode
+        if (shouldRequestAuthorization(tool)) {
             val broker = permissionBroker ?: run {
                 val entry = createAuditEntry(
                     operation = "tool.permission.blocked",
@@ -185,30 +181,38 @@ class ToolTaskRunner(
     }
 
     /**
-     * Evaluate ExecutionPolicy for the tool.
+     * Determine if interactive authorization is required based on tool risk and execution mode.
+     *
+     * Execution Mode semantics:
+     * - ASK: Always require authorization for tools that need approval
+     * - STANDARD: Require authorization for SENSITIVE and higher risk tools
+     * - FULL_ACCESS: Only authorize if tool explicitly requires sensitive approval
+     */
+    private suspend fun shouldRequestAuthorization(tool: Tool): Boolean {
+        val mode = executionModeStore.getMode()
+
+        return when (mode) {
+            // ASK: Always request approval for operations requiring authorization
+            ExecutionMode.ASK -> tool.requiresSensitiveApproval || tool.riskClass.level >= RiskClass.SENSITIVE.level
+
+            // STANDARD: Request approval for sensitive operations
+            ExecutionMode.STANDARD -> tool.requiresSensitiveApproval || tool.riskClass.level >= RiskClass.SENSITIVE.level
+
+            // FULL_ACCESS: Only request approval if explicitly required by tool
+            ExecutionMode.FULL_ACCESS -> tool.requiresSensitiveApproval
+        }
+    }
+
+    /**
+     * Evaluate policy for tool execution.
      *
      * Returns failure if policy denies execution.
      */
     private suspend fun evaluatePolicy(tool: Tool, task: Task): Result<Map<String, Any>> {
-        // Map Tool risk to ExecutionPolicy
-        val toolPolicy = when (tool.riskClass) {
-            RiskClass.READ_ONLY -> ExecutionPolicy.READ_ONLY
-            RiskClass.REVERSIBLE -> ExecutionPolicy.REVERSIBLE
-            RiskClass.SENSITIVE -> ExecutionPolicy.SENSITIVE
-            RiskClass.DESTRUCTIVE -> ExecutionPolicy.DESTRUCTIVE
-        }
-
-        // Map Task risk to ExecutionPolicy
-        val taskPolicy = when (task.riskClass) {
-            RiskClass.READ_ONLY -> ExecutionPolicy.READ_ONLY
-            RiskClass.REVERSIBLE -> ExecutionPolicy.REVERSIBLE
-            RiskClass.SENSITIVE -> ExecutionPolicy.SENSITIVE
-            RiskClass.DESTRUCTIVE -> ExecutionPolicy.DESTRUCTIVE
-        }
-
-        // Policy allows if tool policy <= task policy (higher risk task can run lower risk tools)
+        // Policy allows if tool policy level <= task policy level
+        // (higher risk task can run lower risk tools)
         // But tools requiring sensitive approval must be authorized regardless
-        if (toolPolicy.ordinal > taskPolicy.ordinal && !tool.requiresSensitiveApproval) {
+        if (tool.riskClass.level > task.riskClass.level && !tool.requiresSensitiveApproval) {
             val entry = createAuditEntry(
                 operation = "tool.policy.denied",
                 target = task.id,
@@ -220,6 +224,22 @@ class ToolTaskRunner(
             auditLog.record(entry)
             return Result.failure(IllegalStateException(
                 "execution_denied:tool_risk_${tool.riskClass} exceeds_task_risk_${task.riskClass}"
+            ))
+        }
+
+        // Check if tool is allowed by policy engine (e.g., not destructively blocked)
+        if (tool.riskClass == RiskClass.DESTRUCTIVE) {
+            val entry = createAuditEntry(
+                operation = "tool.policy.denied",
+                target = task.id,
+                toolId = tool.id,
+                risk = tool.riskClass,
+                decision = "DENIED",
+                outcome = "destructive_blocked"
+            )
+            auditLog.record(entry)
+            return Result.failure(IllegalStateException(
+                "execution_denied:destructive_operation_blocked"
             ))
         }
 
