@@ -39,7 +39,7 @@ class TaskVerifier(
         result: Result<Map<String, Any>>,
         executionAttemptId: String
     ): TaskVerification {
-        val evidence = evidenceCollector.collect(result)
+        val evidence = evidenceCollector.collect(result, executionAttemptId)
         val verdict = policy.evaluate(task, evidence)
         return TaskVerification(
             outcome = verdict.outcome,
@@ -66,7 +66,7 @@ class EvidenceCollector {
      * successful result contributes the reported outcome plus every declared
      * evidence entry.
      */
-    fun collect(result: Result<Map<String, Any>>): List<EvidenceItem> {
+    fun collect(result: Result<Map<String, Any>>, executionAttemptId: String): List<EvidenceItem> {
         val failure = result.exceptionOrNull()
         if (failure != null) {
             return listOf(
@@ -74,7 +74,8 @@ class EvidenceCollector {
                     type = "execution_failure",
                     value = failure.message ?: failure::class.simpleName ?: "unknown failure",
                     source = "runner",
-                    recordedAt = System.currentTimeMillis()
+                    recordedAt = System.currentTimeMillis(),
+                    executionAttemptId = executionAttemptId
                 )
             )
         }
@@ -90,7 +91,8 @@ class EvidenceCollector {
                 type = "reported_success",
                 value = reported.toString(),
                 source = "runner",
-                recordedAt = now
+                recordedAt = now,
+                executionAttemptId = executionAttemptId
             )
         }
         payload["error"]?.let { reported ->
@@ -100,7 +102,8 @@ class EvidenceCollector {
                     type = "reported_error",
                     value = text,
                     source = "runner",
-                    recordedAt = now
+                    recordedAt = now,
+                    executionAttemptId = executionAttemptId
                 )
             }
         }
@@ -118,14 +121,16 @@ class EvidenceCollector {
                     type = raw.substring(0, separator),
                     value = raw.substring(separator + 1),
                     source = "runner",
-                    recordedAt = now
+                    recordedAt = now,
+                    executionAttemptId = executionAttemptId
                 )
             } else {
                 evidence += EvidenceItem(
                     type = "runner_evidence",
                     value = raw,
                     source = "runner",
-                    recordedAt = now
+                    recordedAt = now,
+                    executionAttemptId = executionAttemptId
                 )
             }
         }
@@ -136,7 +141,8 @@ class EvidenceCollector {
                 type = "output",
                 value = output.toString(),
                 source = "runner",
-                recordedAt = now
+                recordedAt = now,
+                executionAttemptId = executionAttemptId
             )
         }
 

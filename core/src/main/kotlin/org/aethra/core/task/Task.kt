@@ -252,7 +252,8 @@ class Task(
                 evidenceMissing = it.evidenceMissing
             )
         }
-        isVerified = persistedIsVerified
+        // Derive isVerified from verificationOutcome, not from journal (tamper-proofing)
+        isVerified = verificationOutcome == VerificationOutcome.VERIFIED
 
         when (persistedState) {
             TaskState.RUNNING,

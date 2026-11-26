@@ -54,7 +54,8 @@ class TaskPersistence(private val storage: Storage) {
                         evidenceMissing = it.evidenceMissing
                     )
                 },
-                isVerified = task.isVerified,
+                // isVerified is now derived from verificationOutcome during restore (tamper-proofing)
+                isVerified = task.verificationOutcome == VerificationOutcome.VERIFIED,
                 postconditions = task.postconditions.map {
                     PersistedPostcondition(
                         name = it.name,

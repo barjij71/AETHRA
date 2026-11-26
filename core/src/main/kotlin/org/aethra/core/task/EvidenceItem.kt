@@ -12,6 +12,7 @@ import kotlinx.serialization.Serializable
  * @property type the evidence category, e.g. "provider_response" or "capability_evidence".
  * @property value the observed value.
  * @property source the subsystem that produced the observation, e.g. "runner" or "capability".
+ * @property executionAttemptId the ID of the execution attempt that produced this evidence.
  * @property recordedAt wall-clock time the observation was recorded.
  */
 @Serializable
@@ -19,10 +20,12 @@ data class EvidenceItem(
     val type: String,
     val value: String,
     val source: String = "runner",
-    val recordedAt: Long = 0L
+    val recordedAt: Long = 0L,
+    val executionAttemptId: String = ""
 ) {
     init {
         require(type.isNotBlank()) { "evidence type must not be blank" }
+        require(executionAttemptId.isNotBlank()) { "executionAttemptId must not be blank" }
     }
 
     /**
@@ -30,7 +33,7 @@ data class EvidenceItem(
      * The recordedAt timestamp is intentionally excluded so that the journal
      * stays diff-friendly and the value remains readable.
      */
-    fun encode(): String = "$type=$value@$source"
+    fun encode(): String = "$type=$value@$source@$executionAttemptId"
 
     companion object {
         /**
@@ -40,18 +43,14 @@ data class EvidenceItem(
          */
         fun decode(encoded: String): EvidenceItem {
             val separator = encoded.indexOf('=')
-            if (separator <= 0) return EvidenceItem(type = "raw", value = encoded)
+            if (separator <= 0) return EvidenceItem(type = "raw", value = encoded, executionAttemptId = "unknown")
             val type = encoded.substring(0, separator)
             val remainder = encoded.substring(separator + 1)
-            val sourceSeparator = remainder.lastIndexOf('@')
-            return if (sourceSeparator > 0) {
-                EvidenceItem(
-                    type = type,
-                    value = remainder.substring(0, sourceSeparator),
-                    source = remainder.substring(sourceSeparator + 1)
-                )
-            } else {
-                EvidenceItem(type = type, value = remainder)
+            val parts = remainder.split('@')
+            return when (parts.size) {
+                3 -> EvidenceItem(type = type, value = parts[0], source = parts[1], executionAttemptId = parts[2])
+                2 -> EvidenceItem(type = type, value = parts[0], source = parts[1], executionAttemptId = "unknown")
+                else -> EvidenceItem(type = type, value = remainder, executionAttemptId = "unknown")
             }
         }
     }
