@@ -11,9 +11,10 @@ import org.aethra.assistant.aethra.permissions.AndroidApprovalSurface
 import org.aethra.assistant.aethra.security.ExecutionPolicy
 import org.aethra.assistant.aethra.security.PolicyEngine
 import org.aethra.assistant.aethra.skills.SkillRegistryAndroid
-import org.aethra.assistant.aethra.tools.ClipboardReadTool
+import org.aethra.assistant.aethra.tools.AndroidCapabilityProvider
 import org.aethra.assistant.aethra.tools.AppLaunchTool
 import org.aethra.assistant.aethra.tools.AppQueryTool
+import org.aethra.assistant.aethra.tools.ClipboardReadTool
 import org.aethra.assistant.aethra.tools.DeviceInfoTool
 import org.aethra.assistant.aethra.tools.FileReadTool
 import org.aethra.core.agents.AgentEngine
@@ -99,6 +100,9 @@ class PlatformAdapters(private val context: Context) {
     val modelRegistry = ModelRegistry(storage, auditLog)
     val providerModelRouter = ProviderModelRouter(providerRegistry, modelRegistry)
 
+    // Phase 8: Capability authority for the Android execution environment
+    val capabilityProvider = AndroidCapabilityProvider()
+
     val taskRunner: TaskRunner = AndroidTaskDispatcher(this)
     private lateinit var coreTaskEngine: TaskEngine
     internal val approvalSurface = AndroidApprovalSurface(permissionBroker) {
@@ -131,7 +135,8 @@ class PlatformAdapters(private val context: Context) {
         permissionBroker,
         auditLog,
         taskRunner,
-        toolRegistry
+        toolRegistry,
+        capabilityProvider
     )
 
     val memoryAndroid = MemoryAndroid(memoryEngine)

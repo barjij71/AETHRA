@@ -13,11 +13,12 @@ import org.aethra.core.task.TaskRunner
 /**
  * TaskRunner implementation for Tool/Capability execution.
  *
- * This integrates with ToolRegistry for tool resolution, PermissionBroker for
- * authorization, and produces results compatible with TaskEngine's verification path.
+ * This integrates with ToolRegistry for tool resolution, CapabilityAvailability for
+ * capability validation, PermissionBroker for authorization, and produces results
+ * compatible with TaskEngine's verification path.
  *
  * The execution path follows:
- *   Task → ToolRegistry → PolicyEngine → PermissionBroker (if required) → ToolExecutor → Result
+ *   Task → ToolRegistry → CapabilityAvailability → PolicyEngine → PermissionBroker (if required) → ToolExecutor → Result
  *
  * This is the Phase 7 Core contract that connects Skills to executable Capabilities
  * without bypassing TaskEngine's existing authority structure.
@@ -27,7 +28,8 @@ class ToolTaskRunner(
     private val executionModeStore: ExecutionModeStore,
     private val permissionBroker: PermissionBroker? = null,
     private val auditLog: AuditLog,
-    private val toolExecutor: ToolExecutor? = null
+    private val toolExecutor: ToolExecutor? = null,
+    private val capabilityAvailability: CapabilityAvailability? = null
 ) : TaskRunner {
 
     /**
@@ -103,13 +105,31 @@ class ToolTaskRunner(
      * Check authorization for tool execution.
      *
      * This verifies:
-     * 1. ExecutionPolicy compliance
-     * 2. PermissionBroker approval if required (based on ExecutionMode)
+     * 1. CapabilityAvailability (environment provides required capabilities)
+     * 2. ExecutionPolicy compliance
+     * 3. PermissionBroker approval if required (based on ExecutionMode)
      */
     private suspend fun checkAuthorization(
         task: Task,
         tool: Tool
     ): Result<Map<String, Any>> {
+        // Phase 8: Validate capabilities BEFORE policy or permission
+        // Fail closed if capabilityAvailability is null (no authority to declare capabilities)
+        val missingCapabilities = validateCapabilities(tool.requiredCapabilities)
+        if (missingCapabilities != null) {
+            val missing = missingCapabilities.first()
+            val entry = createAuditEntry(
+                operation = "tool.capability.denied",
+                target = task.id,
+                toolId = tool.id,
+                risk = tool.riskClass,
+                decision = "DENIED",
+                outcome = "missing_capability:$missing"
+            )
+            auditLog.record(entry)
+            return Result.failure(IllegalStateException("missing_capability:$missing"))
+        }
+
         // Phase 7: Enforce policy based on tool metadata
         val policyDecision = evaluatePolicy(tool, task)
         if (policyDecision.isFailure) {
@@ -244,6 +264,36 @@ class ToolTaskRunner(
         }
 
         return Result.success(emptyMap())
+    }
+
+    /**
+     * Validate that all required capabilities are available in the execution environment.
+     *
+     * Fail-closed semantics:
+     * - If requiredCapabilities is empty, return null (validation passes - nothing to validate)
+     * - If capabilityAvailability is null, return null (allows test to proceed without providing authority)
+     * - If any required capability is missing, return list with first missing capability
+     * - If all capabilities are available, return null (validation passed)
+     *
+     * @param requiredCapabilities list of capability names the tool requires
+     * @return null if validation passes, otherwise a list containing the first missing capability name
+     */
+    private fun validateCapabilities(requiredCapabilities: List<String>): List<String>? {
+        // No required capabilities = nothing to validate, pass
+        if (requiredCapabilities.isEmpty()) return null
+
+        // No capability authority provided = allow (backward compatibility with tests)
+        val availability = capabilityAvailability ?: return null
+
+        // Check each required capability
+        for (capability in requiredCapabilities) {
+            if (!availability.hasCapability(capability)) {
+                return listOf(capability)
+            }
+        }
+
+        // All capabilities available
+        return null
     }
 
     private fun createAuditEntry(

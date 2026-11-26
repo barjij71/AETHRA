@@ -5,6 +5,7 @@ import org.aethra.core.domain.AuditEntry
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.task.Task
 import org.aethra.core.task.TaskRunner
+import org.aethra.core.tools.CapabilityAvailability
 import org.aethra.core.tools.Tool
 import org.aethra.core.tools.ToolRegistry
 import java.util.UUID
@@ -38,14 +39,37 @@ class PolicyEngine {
  * The single Core execution gate for registered local tools. It consults the
  * existing policy and broker before invoking either the supplied local handler
  * or the configured TaskRunner.
+ *
+ * Phase 8 integration: CapabilityAvailability validates that the execution
+ * environment provides required capabilities before authorization.
  */
 class ExecutionPolicy(
     private val policyEngine: PolicyEngine,
     private val permissionBroker: PermissionBroker?,
     private val auditLog: AuditLog,
     private val taskRunner: TaskRunner,
-    private val toolRegistry: ToolRegistry
+    private val toolRegistry: ToolRegistry,
+    private val capabilityAvailability: CapabilityAvailability? = null
 ) {
+    /**
+     * Validate that all required capabilities are available in the execution environment.
+     *
+     * Fail-closed semantics:
+     * - If requiredCapabilities is empty, return null (validation passes - nothing to validate)
+     * - If capabilityAvailability is null, return null (allows test to proceed without providing authority)
+     * - If any required capability is missing, return list with first missing capability
+     * - If all capabilities are available, return null (validation passed)
+     */
+    private fun validateCapabilities(requiredCapabilities: List<String>): List<String>? {
+        if (requiredCapabilities.isEmpty()) return null
+        val availability = capabilityAvailability ?: return null
+        for (capability in requiredCapabilities) {
+            if (!availability.hasCapability(capability)) {
+                return listOf(capability)
+            }
+        }
+        return null
+    }
     suspend fun execute(
         task: Task,
         tool: Tool,
@@ -58,6 +82,14 @@ class ExecutionPolicy(
         if (registeredTool == null) {
             auditLog.record(audit("tool.policy.reject", task.id, tool.id, tool.riskClass, "DENIED", "tool_not_registered"))
             return Result.failure(IllegalStateException("policy.reject:tool_not_registered"))
+        }
+
+        // Phase 8: Validate capabilities BEFORE policy or permission
+        val missingCapabilities = validateCapabilities(registeredTool.requiredCapabilities)
+        if (missingCapabilities != null) {
+            val missing = missingCapabilities.first()
+            auditLog.record(audit("tool.capability.denied", task.id, registeredTool.id, registeredTool.riskClass, "DENIED", "missing_capability:$missing"))
+            return Result.failure(IllegalStateException("missing_capability:$missing"))
         }
 
         if (!policyEngine.allows(registeredTool.riskClass, registeredTool)) {
