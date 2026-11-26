@@ -25,7 +25,7 @@ SkillRegistry.install() → lifecycle transition (never grants trust)
     ↓
 SkillRegistry.trust() → Core verification gate (internal)
     ↓
-SkillRegistry.enable() → execution eligibility (requires TRUSTED + INSTALLED)
+SkillRegistry.enable() → execution eligibility (requires TRUSTED + INSTALLED or DISABLED)
     ↓
 ToolRegistry → ExecutionPolicy → PermissionBroker → AuditLog
     ↓
@@ -219,7 +219,7 @@ The current model has **identity trust only** (`trustState` bound to `skill.id`)
 
 ### Why This Design?
 
-- `TRUSTED` means: "Core has verified this **specific artifact** is safe"
+- `TRUSTED` means: "Core has approved this **skill identity** as safe to execute"
 - A new version with the same `id` is a **different artifact** — integrity may differ
 - Preserving `TRUSTED` across versions would allow silent upgrade to executable without verification
 - The model **cannot represent artifact-level trust** without adding `verifiedVersion` or `verifiedIntegrityHash` fields
