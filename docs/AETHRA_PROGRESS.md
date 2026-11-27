@@ -8,7 +8,7 @@
 |---|---|
 | Repository | `barjij71/AETHRA` |
 | Active branch | `feature/phase-7-tool-execution-contract` |
-| Current verified baseline | `4c4d133fb91b8c556ab132cd9cc4c4a4d1be5602` |
+| Current verified baseline | `56a853ec0d956f3d6a4abacac9081d7d38105b99` |
 | Workspace | `/data/data/com.termux/files/home/aethra-src` |
 
 ## Verified milestones
@@ -28,7 +28,7 @@
 
 ## Current execution architecture
 
-````
+```
 
 Android UI
   → AndroidRuntimeViewModel
@@ -42,7 +42,7 @@ Android UI
       └── provider fallback → ProviderTaskRunner
   → TaskVerifier
   → persistence / terminal events
-````
+```
 
 
 The provider fallback path is intentionally not considered a production LLM implementation while no production provider is registered.

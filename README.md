@@ -4,7 +4,7 @@
 
 AETHRA separates Android presentation/runtime integration from a platform-neutral Core.
 
-````
+```
 
 Android → Runtime → Core → Task → Skills / Tools
                               ↓
@@ -13,7 +13,7 @@ Android → Runtime → Core → Task → Skills / Tools
                     Provider / Model (optional)
                               ↓
                     Verification → Persistence / Events
-````
+```
 
 
 ## Current verified status
@@ -36,15 +36,15 @@ Verified milestones:
 
 Current development branch:
 
-````
+```
 
 feature/phase-7-tool-execution-contract
-````
+```
 
 
 ## Repository structure
 
-````
+```
 
 core/
   src/main/kotlin/org/aethra/core/
@@ -78,7 +78,7 @@ docs/
 skills/
 config/
 .github/
-````
+```
 
 
 `core` is platform-neutral Kotlin/JVM code. Android-specific implementations belong under `app`.
@@ -87,7 +87,7 @@ config/
 
 The authoritative Task execution path is:
 
-````
+```
 
 Android UI
   → Runtime
@@ -98,7 +98,7 @@ Android UI
   → operation
   → TaskVerifier
   → persistence
-````
+```
 
 
 `TaskEngine` remains the authoritative Task execution authority. WorkflowEngine is orchestration; SkillOrchestrator is the Skill-to-Task boundary.

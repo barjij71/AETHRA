@@ -1,7 +1,11 @@
 # Configuration AETHRA
+#
+# This file is legacy/project configuration metadata. It is not the source of truth
+# for the current Core architecture, phase status, or production provider registration.
+# Current provider implementations are determined by Core/App source wiring.
 version: "0.1.0"
 project: AETHRA
-phase: 0
+phase: 0 # legacy metadata; do not use as current implementation status
 
 core:
   runtime:
