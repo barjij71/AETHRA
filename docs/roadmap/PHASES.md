@@ -1,92 +1,61 @@
-# Delivery Roadmap
+# AETHRA Delivery Phases
 
-This roadmap separates architecture decisions from implemented and verified capabilities. No phase is complete without evidence attached to the delivery report.
+This roadmap records verified architecture milestones. A phase is not complete merely because a commit exists; source behavior and tests must support the claim.
 
-## Phase 0 — Repository and architecture foundation
-- [x] Confirm the AETHRA repository was empty before initialization.
-- [x] Add project overview and initial architecture decisions.
-- [x] Record first-pass open-source comparison and integration boundaries.
-- [ ] Audit licenses and transitive dependencies for the selected components.
-- [ ] Confirm application package structure, build toolchain, and supported Android versions.
+## Verified phases
 
-## Phase 1 — Minimal Android buildable shell
-- [x] Create the minimal native Android project shell (Kotlin + Jetpack Compose).
-- [ ] Add the Gradle Wrapper; the initial CI currently installs a pinned Gradle distribution directly.
-- [x] Add an initial GitHub Actions build/test/lint workflow (first run pending).
-- [x] Add a minimal Arabic home placeholder.
-- [ ] Add navigation, RTL verification, and accessibility tests.
-- [x] Add basic unit-test task and CI test step.
-- [ ] Add substantive core tests and a build/test evidence report.
-- [ ] Do not add root or Linux execution yet.
+### Phase 5 — Skill Runtime Lifecycle
+**Status: VERIFIED**
 
-Exit criteria: clean checkout builds in CI; tests pass; debug APK is generated; no secrets or large model downloads are required.
+### Phase 6 — Task Verification / Evidence
+**Status: VERIFIED**
 
-## Phase 2 — Independent AETHRA Core
-- [ ] Define task, event, tool, permission, provider, skill, and agent contracts.
-- [ ] Implement persisted task state, checkpoints, bounded retries, cancellation, and recovery.
-- [ ] Implement local memory with review/export/delete controls.
-- [ ] Add structured audit records and evidence-based completion checks.
-- [ ] Add fake/mock providers and deterministic tests.
+### Phase 7 — Tool Execution Capability Contract
+**Status: VERIFIED**
 
-Exit criteria: orchestration and recovery tests pass without any network model.
+### Phase 7 Security Repair
+**Status: VERIFIED**
 
-## Phase 3 — Model providers and agent orchestration
-- [ ] Implement provider-neutral streaming/tool-call interface.
-- [ ] Add one-provider baseline and safe fallback policy.
-- [ ] Add reusable role-based agents and a persisted agent registry.
-- [ ] Add adaptive selection based on capability, privacy, availability, and cost.
-- [ ] Add code-generated agent proposal, isolated tests, review, and explicit activation.
-- [ ] Prove retries and reviewer loops are bounded.
+### Phase 7B — Execution Modes
+**Status: VERIFIED — RUNNER LOCAL**
 
-Exit criteria: an end-to-end mocked task runs through plan → execute → test → repair → verify with traceable evidence.
+ASK, STANDARD, and FULL_ACCESS are execution-mode semantics used by the ToolTaskRunner path. ExecutionMode is not a global Android policy service.
 
-## Phase 4 — Android integration and permission broker
-- [ ] Add least-privilege Android tools using supported public APIs.
-- [ ] Add an explicit permission broker for privileged operations.
-- [ ] Add logs/diagnostics integrations such as logcat/dumpsys only where permitted.
-- [ ] Separate read-only diagnostics from mutations.
-- [ ] Add approval and cancellation UI for sensitive actions.
+### Phase 8 — Capability Availability
+**Status: VERIFIED**
 
-Exit criteria: permission tests demonstrate that agents cannot bypass the broker.
+Core defines the platform-neutral `CapabilityAvailability` contract. Android supplies `AndroidCapabilityProvider`.
 
-## Phase 5 — Linux Runtime
-- [ ] Compare userland implementations and distribution choices.
-- [ ] Prototype isolated execution and process lifecycle management.
-- [ ] Prototype root/chroot integration separately on the target device.
-- [ ] Apply resource limits, storage quotas, process cleanup, logs, and update verification.
-- [ ] Verify Android/ARM64 compatibility, SELinux constraints, and restart behavior.
+### Phase 9 — Skill → Task Provenance
+**Status: VERIFIED**
 
-Exit criteria: test scripts prove both execution modes and document their real isolation/security limits.
+`SkillOrchestrator` resolves Skill entrypoints to registered Tools and creates Tasks with Skill provenance that survives persistence/restoration.
 
-## Phase 6 — REA and reverse-engineering lab
-- [ ] Pin a verified REA release and inspect its license/dependency inventory.
-- [ ] Validate Node.js/npm availability in the selected Linux runtime.
-- [ ] Test MCP and CLI invocation from AETHRA's adapter.
-- [ ] Check which analysis engines can run locally on Android/ARM64.
-- [ ] Add APK/static inspection, runtime evidence collection where authorized, and report generation.
-- [ ] Do not require commercial engines for core operation.
+### Phase 10 — WorkflowEngine Runtime Exposure
+**Status: VERIFIED**
 
-Exit criteria: a known test target produces a reproducible report with evidence and explicit unknowns.
+WorkflowEngine is exposed through CoreRegistry/Runtime while TaskEngine remains the authoritative Task execution authority.
 
-## Phase 7 — Skills, plugins, and agent extension lifecycle
-- [ ] Define a manifest, source provenance, hashes, versioning, license, dependencies, and requested permissions.
-- [ ] Download and scan from configured sources.
-- [ ] Require user approval before first execution of each new skill.
-- [ ] Test skill execution in a constrained environment.
-- [ ] Add enable/disable/remove, audit history, and rollback.
+## Deferred areas
 
-## Phase 8 — Voice, holographic presence, and files
-- [ ] Evaluate offline/online speech recognition and synthesis for Arabic, Moroccan Darija, and English.
-- [ ] Implement interruptible speech and wake-word behavior within Android background limits.
-- [ ] Add file intake for images, PDF, text, ZIP, APK and other supported formats with type detection.
-- [ ] Add lightweight female holographic presence with power/performance-aware degradation.
+### Phase 11 — Agent Execution
+**Status: NOT READY**
 
-## Phase 9 — Hardening and optional Windows bridge
-- [ ] Security review, regression tests, battery/thermal/performance tests, and recovery tests.
-- [ ] Verify license notices and supply-chain provenance.
-- [ ] Consider optional Windows pairing/bridge only after Android core is stable.
-- [ ] Publish build evidence, known limitations, and a user-facing installation guide.
+No concrete production requirement proving a separate Agent execution contract has been established.
+
+### Phase 12 — Provider/Model Platform Boundary
+**Status: NOT READY**
+
+Provider contracts and routing exist in Core, but there is currently no concrete production Android `LanguageModelProvider` implementation or registered `ProviderFactory`.
+
+## Repository-wide audit
+
+A full source/module/path audit was performed against the current branch.
+
+**Result: NO NEW PHASE REQUIRED.**
+
+This does not mean every future product feature is complete. It means the repository does not currently prove a missing architectural contract that justifies another implementation phase.
 
 ## Operating rule
 
-Do not mark a task complete from an agent's assertion alone. Require command output, test results, or reproducible manual evidence. If blocked, preserve state and report the exact blocker.
+When a future requirement appears, perform read-only contract discovery first. Do not create abstractions, managers, runners, registries, or phases without a concrete consumer and evidence.

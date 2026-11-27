@@ -1,58 +1,85 @@
 # AETHRA Development Workflow System
 
 ## Goal
-Route development tasks to the correct scoped workflow contract so that future coding agents work on AETHRA consistently, safely, and incrementally — loading only the context relevant to the current task.
 
-## Scope
-Applies to all development work on the AETHRA repository (`barjij71/AETHRA`, branch `codex/phase-c-handoff`): core Kotlin, Android app, CI workflows, and this workflow system itself. Does not cover runtime execution (that is AETHRA Core's TaskEngine) or product design decisions already captured in `docs/`.
+Route repository development tasks to the correct scoped workflow while preserving AETHRA's current architecture and repository boundaries.
 
-## Triggers
-- Any intent to modify, add, or delete code in the AETHRA repository
-- Intent phrases: "implement", "fix", "refactor", "add", "remove", "test", "review", "release", "build", "CI"
-- File patterns: anything under `core/src/`, `app/src/`, `.github/workflows/`, `skills/`
+## Canonical repository
 
-## Inputs
-- The task description (what needs to be done)
-- The current repository state (HEAD commit, working tree status)
-- Relevant AETHRA docs (`docs/architecture/DECISIONS.md`, `docs/roadmap/PHASES.md`, `docs/security/EXECUTION_MODEL.md`)
+Repository: `barjij71/AETHRA`
+
+Current development branch: `feature/phase-7-tool-execution-contract`
+
+Do not redirect agents to historical branches, Windows copies, Instabox workspaces, or obsolete repositories.
 
 ## Invariants
-- GitHub AETHRA (`origin/codex/phase-c-handoff`) is the authoritative source; local clones are not sources of truth
-- No destructive Git operations: `reset --hard`, `git clean`, `rebase`, `force push`, history rewriting
-- Do not weaken, skip, or delete tests to make CI green
-- Do not reintroduce JARVIS material; do not make Hermes the runtime; do not add mock implementations
-- Every change must be a focused, additive commit; working tree must be clean before and after
-- CI must be green before considering work complete
+
+- Inspect the current repository before editing.
+- Never discard local work to match a remote branch.
+- Do not use reset --hard, git clean, rebase, force-push, or history rewriting.
+- Do not weaken, skip, or delete tests to make CI green.
+- Do not reintroduce Jarvis material or make Hermes the AETHRA runtime.
+- Do not invent new architecture without a concrete consumer and source evidence.
+- Every change must be focused and leave the working tree clean after verification.
+- Report CI/test results honestly.
 
 ## Procedure
-1. **Classify the task** — read `reference/routing-matrix.md` to determine which workflow(s) apply
-2. **Load only the relevant workflow SKILL** — `skills/aethra/workflows/<name>/SKILL.md`; do not load all workflows at once
-3. **Inspect first** — read the current repository files referenced by the workflow before making changes
-4. **Follow the procedure** — execute the deterministic steps in the loaded workflow SKILL
-5. **Verify** — run the tests the workflow requires; for Android changes, confirm CI produces a green APK
-6. **Review gate** — confirm every item in the workflow's review gate passes
-7. **Commit** — single focused commit with a conventional message (`fix(scope): ...`, `feat(scope): ...`, `test(scope): ...`)
-8. **Push** — normal push to `codex/phase-c-handoff`; confirm CI is green
 
-## Outputs
-- Focused, committing changes to AETHRA source
-- Updated or new tests covering the change
-- Green CI on `codex/phase-c-handoff`
-- Clean working tree
+1. Verify pwd, branch, HEAD, remote, and working-tree status.
+2. Inspect relevant source and tests read-only before editing.
+3. Identify the owning architectural boundary.
+4. Make the smallest justified change.
+5. Add or update regression tests when behavior changes.
+6. Run required verification.
+7. Review the diff for unintended changes.
+8. Create one focused conventional commit.
+9. Push the intended branch normally.
+10. Re-verify local HEAD equals the pushed remote HEAD.
+
+## Architecture boundaries
+
+- TaskEngine is the authoritative Task execution authority.
+- WorkflowEngine orchestrates workflows but does not replace TaskEngine.
+- SkillOrchestrator is the Skill-to-Task boundary.
+- Capability availability and user permission are separate concepts.
+- ExecutionPolicy and PermissionBroker remain part of authorization.
+- TaskVerifier remains verification authority.
+- Android-specific implementations belong in app/; Core remains platform-neutral.
+- Provider contracts may exist without a production provider implementation.
+- ExecutionMode is runner-local unless a future contract proves a broader scope.
+
+## Phase discipline
+
+A new phase must not be created merely to continue numbering.
+
+Before proposing implementation:
+
+1. perform read-only contract discovery;
+2. prove a concrete production consumer or architectural gap;
+3. define the smallest contract required;
+4. obtain acceptance of the contract;
+5. implement only that contract;
+6. verify with tests/build evidence.
+
+If no gap is proven, report:
+
+NO NEW PHASE REQUIRED
 
 ## Review gate
-- [ ] Working tree is clean before starting
-- [ ] Only the relevant workflow SKILL was loaded (progressive disclosure)
-- [ ] Current repository state was inspected before changes
-- [ ] All required tests pass locally
-- [ ] CI is green on `origin/codex/phase-c-handoff` after push
-- [ ] Commit is focused and atomic (one logical change)
-- [ ] No tests were weakened, skipped, or deleted
+
+- [ ] Correct repository and branch verified.
+- [ ] Current source inspected before changes.
+- [ ] Scope limited to accepted task.
+- [ ] Required tests pass.
+- [ ] No destructive Git operation used.
+- [ ] Diff contains no unrelated changes.
+- [ ] Working tree clean.
+- [ ] Remote branch verified after push.
 
 ## References
-- `skills/aethra/reference/routing-matrix.md` — task → workflow mapping
-- `skills/aethra/reference/role-contracts.md` — roles, boundaries, handoffs
-- `docs/architecture/DECISIONS.md` — AETHRA architecture decisions
-- `docs/roadmap/PHASES.md` — delivery roadmap
-- `docs/security/EXECUTION_MODEL.md` — security and execution model
-- `docs/AETHRA_PROGRESS.md` — project progress and evidence
+
+- docs/architecture/DECISIONS.md
+- docs/roadmap/PHASES.md
+- docs/security/EXECUTION_MODEL.md
+- docs/AETHRA_PROGRESS.md
+- docs/BUILD_ROADMAP.md
