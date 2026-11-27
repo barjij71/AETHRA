@@ -19,6 +19,9 @@ import org.aethra.assistant.aethra.tools.ClipboardWriteTool
 import org.aethra.assistant.aethra.tools.DeviceInfoTool
 import org.aethra.assistant.aethra.tools.FileReadTool
 import org.aethra.assistant.aethra.tools.FileWriteTool
+import org.aethra.assistant.aethra.providers.AndroidApiKeyStore
+import org.aethra.assistant.aethra.providers.AndroidLanguageModelProvider
+import org.aethra.assistant.aethra.providers.AndroidProviderFactory
 import org.aethra.core.agents.AgentEngine
 import org.aethra.core.agents.AgentPersistence
 import org.aethra.core.memory.MemoryEngine
@@ -102,6 +105,48 @@ class PlatformAdapters(private val context: Context) {
     val modelRegistry = ModelRegistry(storage, auditLog)
     val providerModelRouter = ProviderModelRouter(providerRegistry, modelRegistry)
 
+    // Phase 12A: Provider foundation — register a vendor-neutral HTTP provider.
+    // The API key is supplied through AndroidApiKeyStore (Android Keystore-backed)
+    // and is never embedded in source or provider definitions.
+    val providerApiKeyStore = AndroidApiKeyStore(context)
+    val providerFactory = AndroidProviderFactory(providerApiKeyStore, providerEndpoint, providerModelId)
+
+    private val providerEndpoint: String = "https://api.example.com/v1/chat/completions"
+    private val providerModelId: String = "default-model"
+
+    val providerDefinition = org.aethra.core.providers.ProviderDefinition(
+        providerId = "android-provider",
+        displayName = "Android Provider",
+        providerType = "custom",
+        endpoint = providerEndpoint,
+        authenticationCapability = "api_key",
+        supportedModels = listOf(providerModelId),
+        capabilities = emptySet(),
+        availability = "available",
+        health = "healthy",
+        isLocal = false,
+        isFallbackEligible = false
+    )
+
+    val modelDefinition = org.aethra.core.providers.ModelDefinition(
+        creator = "android-provider",
+        modelId = providerModelId,
+        displayName = "Default Model",
+        accessProvider = "android-provider",
+        route = providerEndpoint,
+        capabilities = emptySet(),
+        contextLimit = null,
+        isLocal = false,
+        availability = "available",
+        health = "healthy",
+        inputOutput = "text",
+        supportsTools = false,
+        supportsVision = false,
+        supportsAudio = false,
+        supportsStreaming = false,
+        supportsReasoning = false
+    )
+
     // Phase 8: Capability authority for the Android execution environment
     val capabilityProvider = AndroidCapabilityProvider()
 
@@ -167,6 +212,9 @@ class PlatformAdapters(private val context: Context) {
 
     init {
         registerExternalCapabilities()
+        providerRegistry.registerProviderFactory(providerFactory)
+        providerRegistry.register(providerDefinition)
+        modelRegistry.register(modelDefinition)
     }
 
     fun registerExternalCapabilities() {
