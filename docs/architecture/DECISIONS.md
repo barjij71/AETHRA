@@ -1,65 +1,53 @@
-# Architecture Decisions (Draft)
+# AETHRA Architecture Decisions
 
-Status: accepted design direction; implementation not yet verified.
+**Status:** accepted architecture baseline; implementation status is tracked separately in the progress/phase documents.
 
 ## A-001 — Independent AETHRA Core
 
-AETHRA owns task planning and state, memory, permission checks, skills/tools, provider selection, agent orchestration, execution monitoring, and result verification. External agents and frameworks are adapters, not runtime prerequisites.
+AETHRA owns task state and execution orchestration, memory, policy/permission checks, skills/tools, provider selection, agent lifecycle, workflow orchestration, and result verification.
 
 ## A-002 — Android-first native application
 
-Build the primary user experience as a native Android app. The initial shell uses Kotlin + Jetpack Compose. Windows integration is optional and later. The initial build configuration currently targets API 36 with minSdk 29; the minimum version remains provisional until device/API compatibility requirements are finalized.
+The primary user experience is a native Android app using Kotlin + Jetpack Compose. Windows/Linux integrations are optional future platform boundaries.
 
-## A-003 — Hybrid Linux runtime
+## A-003 — Capability-mediated platform operations
 
-Support two execution modes:
-1. **Isolated userland by default:** tools run in a managed Linux userland with restricted access.
-2. **Privileged Android integration:** a separately mediated bridge may use root and chroot/bind mounts where compatible with Android, SELinux, filesystem layout, and device policy.
+Platform-specific operations are exposed to Core through narrow interfaces such as capability availability and runtime/task-runner boundaries. Core does not import Android APIs.
 
-A chroot is not, by itself, a security sandbox. Root must not be inherited by every tool. The core mediates each privileged operation.
+## A-004 — Optional external analysis integrations
 
-## A-004 — REA as an optional analysis integration
+External analysis tools such as REA may be integrated through explicit adapters when a concrete product requirement exists. Their availability must not be assumed by Core.
 
-Use the official `morluto/rea` project as the planned reverse-engineering tool provider through MCP/CLI integration. The REA skill instructions, MCP server, and external analysis engines are distinct deliverables. The core remains usable when REA is unavailable.
+## A-005 — Agent lifecycle and execution
 
-REA's current documented requirements include supported Node.js versions and npm; additional analysis engines are target-specific. Android/ARM64 compatibility and the required engines must be proven in a spike before promising on-device support.
+Agent definitions and lifecycle are owned by Core. An Agent does not automatically require a separate execution engine; existing TaskEngine/TaskRunner infrastructure remains the execution authority unless a concrete requirement proves otherwise.
 
-## A-005 — Agent orchestration owned by AETHRA
+## A-006 — Provider/model neutrality
 
-Use a provider-neutral orchestration contract with persisted task state, role definitions, tool allowlists, bounded retries, cancellation, evidence records, and explicit approval gates. Start with a small internal state machine rather than embedding a large Python framework in the Android process. Evaluate LangGraph/CrewAI as optional Linux-side adapters only if a measurable requirement justifies them.
+Core defines provider-neutral contracts and routing. Concrete model providers are platform integrations. A provider implementation, credential store, and network transport are not required until a production consumer requires model inference.
 
-Agents may be created in two ways:
-- Compose a role from existing instructions, skills, tools, and permissions.
-- Generate new code when existing components are insufficient.
+## A-007 — Autonomous execution with bounded safety
 
-New agent definitions and code must be versioned, tested in an isolated environment, reviewed, and explicitly approved for persistent activation. Agents cannot grant themselves permissions.
-
-## A-006 — Adaptive AI providers
-
-Allow one model to serve several roles by default. Use multiple providers/models only when task complexity, independent review, privacy, availability, or measured quality warrants it. Support local inference where practical and optional cloud providers. Never imply that all hosted APIs are free or unlimited.
-
-## A-007 — Autonomous task execution with bounded safety
-
-Execute ordinary, authorized steps without repeatedly interrupting the user. Persist checkpoints and verify outcomes using observable evidence. Ask for explicit approval before destructive or high-impact operations, including sensitive root actions, boot/system partition changes, important data deletion, broad permission expansion, or disclosure of private data.
-
-Use bounded retries, time/resource limits, cancellation, logs, and safe recovery. If a dependency, permission, or physical interaction prevents completion, preserve progress and report the blocker honestly.
+Ordinary authorized operations may execute without repeated interactive prompts. Sensitive/high-impact operations remain subject to capability, policy, permission, verification, persistence, cancellation, retry, and resource limits.
 
 ## A-008 — Skills and extensions
 
-Download and inspect skills automatically only from configured trusted sources. Verify source, integrity, license, dependencies, compatibility, and requested permissions. Require user approval before first execution of each newly installed skill. A successful scan is not a guarantee of safety.
+Skills are inspected and validated according to source, integrity, license, dependencies, compatibility, and requested capabilities. Approval to install/execute a skill is not blanket authorization for future sensitive operations.
 
 ## A-009 — Local-first memory and task state
 
-Store task plans, checkpoints, tool results, and user-controlled memory locally by default. Provide review, correction, export, and deletion controls. Keep secrets separate from conversational memory and never commit credentials.
+Task state, checkpoints, tool results, and user-controlled memory are local-first where supported. Secrets remain separate from ordinary conversational memory.
 
 ## A-010 — Evidence-based delivery
 
-A feature is complete only when supported by build/test output or an explicitly documented manual test. Keep architecture decisions, dependency/license inventory, known limitations, and a delivery report up to date.
+A feature is complete only when supported by source evidence and appropriate tests/build results. Documentation must distinguish verified implementation from planned work and unknowns.
 
-## Decisions still open
+## Decisions intentionally open
 
-- Exact Android application/module structure and minimum supported Android version.
-- Linux userland implementation and lifecycle approach (PRoot/chroot/root bridge, storage, updates, resource limits).
-- Whether an on-device LLM is viable on the target device for selected workloads.
-- Voice/wake-word engine and model licensing/size.
-- Which external components can be reused directly after complete license and dependency review.
+- exact minimum supported Android API/device matrix;
+- concrete Linux runtime implementation;
+- on-device LLM viability;
+- voice/wake-word implementation and licensing;
+- optional external integrations and their license/dependency review.
+
+These open product/platform questions are not automatically architectural defects.

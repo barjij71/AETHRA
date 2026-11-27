@@ -1,46 +1,52 @@
-# Build Roadmap
+# AETHRA Build Roadmap
 
-## Objective
-Migrate AETHRA from `barjij71/jarvis` (branch `feature/aethra-identity`) to `barjij71/aethra` on `main` and establish a stable, testable, reproducible build pipeline for the Android voice assistant.
+## Purpose
 
-## Phased Approach
+This document describes the current Kotlin/Android AETHRA repository. It does not describe the historical Jarvis/Tauri migration plan.
 
-| Phase | Focus | Dependencies | Acceptance Criteria |
-|-------|-------|--------------|---------------------|
-| **Phase A – Stability & Buildability** | Ensure the new repository is buildable and CI passes. Install dependencies, verify TypeScript, Rust/Android toolchain (if needed). | Node 24, npm, Rust toolchain, Android SDK/NDK (for device builds), GitHub Actions runner | All CI steps succeed on GitHub Actions for `main` and `feature/build-phase-a`. |
-| **Phase B – Conversation & Memory** | Implement conversation tracking, message log, memory store/retrieval, cancellation/retry. | Phase A | Unit tests pass; memory persists across restarts. |
-| **Phase C – AI Providers** | Add/modify AI providers, test connectivity, error handling, fallback logic, protect API keys. | Phase A | Provider tests pass; automatic fallback works. |
-| **Phase D – Attachments & Files** | File selection, preview, removal, upload; size/extension/MIME validation. | Phase C | Attachments flow works; unsupported files rejected. |
-| **Phase E – Skills & Plugins** | Unified registry, registration, activation, permissions, uninstallation. | Phase D | Tests cover install/update/fail/rollback. |
-| **Phase F – Voice & Wake Word** | Replace dummy STT/TTS, verify wake word detection, handle Android background/notification/battery limits. | Phase A + C | Voice commands recognized on device; wake word detection verified. |
-| **Phase G – UI & UX** | Polish AETHRA interface, RTL/Arabic, accessibility, keep brand. | Phase B, D, E, F | UI builds and passes lint; RTL works. |
-| **Phase H – Remote PC Integration** | Expose PC control via remote PC app; permission prompts, logging. | Phase A + E | Integration tests pass; no shell access. |
+## Current architecture
 
-## Build Commands (web bundle)
+AETHRA is an Android-first Personal AI Execution Environment with a platform-neutral Kotlin/JVM Core.
 
-From repository root:
+- `core` — platform-neutral Kotlin/JVM execution and domain contracts.
+- `app` — Android runtime, platform adapters, UI, Android capability implementations, and Android-specific integration.
 
-```bash
-# install dependencies (inside jarvis-studio-gui)
-cd jarvis-studio-gui
-npm ci
-npm run typecheck
-npm run test
-npm run lint
-npm run build
-```
+## Verified foundation
 
-## Android (debug) Build
+The following contracts are already implemented and verified:
 
-```bash
-cd jarvis-studio-gui
-# Requires ANDROID_HOME, NDK_HOME, Rust toolchain
-npx tauri android build --debug --apk --target aarch64
-```
+1. Skill Runtime lifecycle
+2. Task verification and evidence
+3. Tool execution capability contract
+4. Tool authorization/security ordering
+5. Runner-local execution modes
+6. Capability availability boundary
+7. Skill-to-Task provenance
+8. Workflow orchestration exposure through Runtime/CoreRegistry
 
-## Notes
+Agent execution and production Provider/Model integration are intentionally not declared as completed.
 
-- The Rust Tauri backend is compiled only when Android build is triggered.
-- CI should only run web bundle steps to keep builds fast.
-- Never commit secrets; use GitHub Secrets for signing keys and API keys.
-- Acceptable changes only after review (PR).
+## Development order
+
+Do not assign a new numbered implementation phase solely because a previous phase has finished.
+
+Before starting any new phase:
+
+1. inspect the complete current repository;
+2. identify a concrete production consumer or contract gap;
+3. prove the gap from source;
+4. define the smallest boundary needed;
+5. implement only after the contract is accepted;
+6. add regression tests;
+7. verify Core and Android integration as applicable;
+8. commit and push a focused change.
+
+## Android build
+
+The Android module is a native Kotlin + Jetpack Compose application.
+
+Do not use historical Tauri/Node/Rust build instructions. Current Android build instructions must come from the Gradle project and CI workflow actually present in the repository.
+
+## Historical work
+
+Older migration/roadmap material may exist in Git history. Historical documents must not be treated as current implementation status. If a historical document is retained, it must be explicitly labeled historical and must not direct agents to obsolete branches, repositories, or runtimes.
