@@ -12,7 +12,13 @@ class Task(
     riskClass: RiskClass = RiskClass.READ_ONLY,
     dependsOn: List<String> = emptyList(),
     var onCompleted: (Task) -> Unit = {},
-    postconditions: List<Postcondition> = emptyList()
+    postconditions: List<Postcondition> = emptyList(),
+    /**
+     * Provenance: identifies who created this task.
+     * Defaults to "core" for tasks created by TaskEngine.
+     * Skills set this to their skill ID when delegating through SkillOrchestrator.
+     */
+    createdAtBy: String = "core"
 ) {
     var id: String = UUID.randomUUID().toString()
         private set
@@ -23,6 +29,13 @@ class Task(
     var riskClass: RiskClass = riskClass
         private set
     val dependsOn: List<String> = dependsOn
+
+    /**
+     * Phase 9: provenance of the task creator (e.g. a Skill id).
+     * Defaults to "core". Restored from the durable journal by [restore].
+     */
+    var createdAtBy: String = createdAtBy
+        private set
 
     /**
      * Core-declared postconditions that must hold for this task's objective to
@@ -224,7 +237,12 @@ class Task(
         persistedVerificationEvidence: List<String> = emptyList(),
         persistedVerificationPostconditions: List<PersistedPostconditionResult> = emptyList(),
         persistedIsVerified: Boolean = false,
-        persistedPostconditions: List<Postcondition> = emptyList()
+        persistedPostconditions: List<Postcondition> = emptyList(),
+        /**
+         * Phase 9: provenance restored from the durable journal.
+         * Defaults to "core" so pre-Phase-9 journals restore without provenance.
+         */
+        persistedCreatedAtBy: String = "core"
     ) {
         id = persistedId
         createdAt = persistedCreatedAt
@@ -238,6 +256,8 @@ class Task(
         attemptCounter = persistedAttemptCounter
         retriesUsed = persistedRetriesUsed
         postconditions = persistedPostconditions
+        // Phase 9: provenance survives restore/recovery
+        createdAtBy = persistedCreatedAtBy
         verificationOutcome = persistedVerificationOutcome
         verificationEvidence = persistedVerificationEvidence.map(EvidenceItem::decode)
         verificationPostconditions = persistedVerificationPostconditions.map {

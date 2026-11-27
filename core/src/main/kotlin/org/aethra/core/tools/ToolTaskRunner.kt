@@ -69,7 +69,7 @@ class ToolTaskRunner(
             arguments = arguments,
             taskId = task.id,
             executionAttemptId = task.executionAttemptId,
-            requester = "core.runtime"
+            requester = task.createdAtBy
         )
 
         // Require ToolExecutor for actual execution - no silent fallback

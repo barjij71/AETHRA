@@ -92,9 +92,31 @@ class TaskEngine(
          * Phase 6: Core-declared postconditions that must hold for the task's
          * objective to be verified. Declared by Core only.
          */
-        postconditions: List<Postcondition> = emptyList()
+        postconditions: List<Postcondition> = emptyList(),
+        /**
+         * Phase 9: provenance of the task creator. Defaults to "core".
+         * SkillOrchestrator passes the Skill id so the provenance survives
+         * the complete Task lifecycle (creation -> execution -> persistence).
+         */
+        createdAtBy: String = "core",
+        /**
+         * Phase 9: Tool execution details (key-value arguments passed to the runner).
+         * Defaults to empty map. SkillOrchestrator populates this from SkillRequest.detail.
+         */
+        detail: Map<String, String> = emptyMap()
     ): Task {
-        val task = Task(goal, role, riskClass, dependsOn, postconditions = postconditions)
+        val task = Task(
+            goal = goal,
+            role = role,
+            riskClass = riskClass,
+            dependsOn = dependsOn,
+            postconditions = postconditions,
+            createdAtBy = createdAtBy
+        )
+        // Phase 9: Preserve detail for tool execution context
+        if (detail.isNotEmpty()) {
+            task.updateState(task.state, detail)
+        }
         synchronized(lock) {
             require(dependsOn.all { tasks.containsKey(it) }) {
                 "Task dependency not found"

@@ -63,7 +63,9 @@ class TaskPersistence(private val storage: Storage) {
                         evidenceType = it.evidenceType,
                         expectedValue = it.expectedValue
                     )
-                }
+                },
+                // Phase 9: preserve Skill provenance across the durable journal
+                createdAtBy = task.createdAtBy
             )
         }
         storage.setString(journalKey, json.encodeToString(snapshot))
@@ -84,7 +86,9 @@ class TaskPersistence(private val storage: Storage) {
                     goal = snapshot.goal,
                     role = snapshot.role,
                     riskClass = RiskClass.valueOf(snapshot.riskClass),
-                    dependsOn = snapshot.dependsOn
+                    dependsOn = snapshot.dependsOn,
+                    // Phase 9: restore provenance exactly as persisted
+                    createdAtBy = snapshot.createdAtBy
                 )
                 task.restore(
                     persistedId = snapshot.id,
@@ -112,7 +116,9 @@ class TaskPersistence(private val storage: Storage) {
                             evidenceType = it.evidenceType,
                             expectedValue = it.expectedValue
                         )
-                    }
+                    },
+                    // Phase 9: provenance survives restore/recovery
+                    persistedCreatedAtBy = snapshot.createdAtBy
                 )
                 task
             }
@@ -164,7 +170,12 @@ private data class PersistedTask(
     val verificationEvidence: List<String> = emptyList(),
     val verificationPostconditions: List<PersistedPostconditionResult> = emptyList(),
     val isVerified: Boolean = false,
-    val postconditions: List<PersistedPostcondition> = emptyList()
+    val postconditions: List<PersistedPostcondition> = emptyList(),
+    /**
+     * Phase 9: provenance of the task creator (e.g. a Skill id).
+     * Defaults to "core" so pre-Phase-9 journals restore without provenance.
+     */
+    val createdAtBy: String = "core"
 )
 
 /** Durable form of a Core-declared [Postcondition]. */

@@ -75,4 +75,32 @@ class TaskPersistenceTest {
         assertEquals(TaskState.QUEUED, restored.state)
         assertTrue(!restored.isExecuted)
     }
+
+    @Test
+    fun `createdAtBy provenance survives persist and restore`() = runBlocking {
+        val storage = MemoryStorage()
+        val persistence = TaskPersistence(storage)
+
+        // Create a task with provenance (simulating SkillOrchestrator delegation)
+        val originalTask = Task(
+            goal = "test.task.read",
+            role = "assistant",
+            riskClass = RiskClass.READ_ONLY,
+            createdAtBy = "test.skill.example"
+        )
+
+        // Persist the task
+        persistence.saveAll(listOf(originalTask))
+
+        // Restore the task from storage (simulating process restart)
+        val restoredTasks = persistence.loadAll()
+        val restoredTask = restoredTasks.first { it.id == originalTask.id }
+
+        // CRITICAL: Provenance must survive the round-trip
+        assertEquals(
+            "createdAtBy provenance must survive persistence/restore cycle",
+            "test.skill.example",
+            restoredTask.createdAtBy
+        )
+    }
 }
