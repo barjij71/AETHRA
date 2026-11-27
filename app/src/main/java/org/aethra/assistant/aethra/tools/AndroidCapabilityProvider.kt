@@ -45,7 +45,7 @@ class AndroidCapabilityProvider : CapabilityAvailability {
             CAPABILITY_DEVICE_QUERY -> true
 
             // Notification capabilities
-            CAPABILITY_NOTIFICATION_READ -> true
+            CAPABILITY_NOTIFICATION_READ -> false
 
             // Memory capabilities
             CAPABILITY_MEMORY_WRITE -> true

@@ -83,6 +83,104 @@ class FileReadTool(private val context: Context) {
     }
 }
 
+/** Real file writer, restricted to the app's own private storage (filesDir).
+ * Mirrors the NativeTools declaration `file.write` (REVERSIBLE; write a text file
+ * in an authorised directory).
+ */
+class FileWriteTool(private val context: Context) {
+    val tool = Tool(
+        id = "file.write",
+        description = "Write a text file inside the app's private files directory",
+        category = "file",
+        requiredCapabilities = listOf("file.write"),
+        inputSchema = mapOf("path" to "string", "content" to "string"),
+        outputSchema = mapOf("path" to "string", "content" to "string"),
+        riskClass = RiskClass.REVERSIBLE,
+        approvalRequired = true,
+        reversible = true,
+        timeoutSeconds = 30,
+        native = true
+    )
+
+    suspend fun execute(path: String, content: String): Result<Map<String, Any>> {
+        val authorisedRoots = listOfNotNull(
+            canonicalOrNull(context.filesDir)?.absolutePath
+        )
+        if (authorisedRoots.isEmpty()) {
+            return Result.failure(IllegalStateException("app private storage is unavailable"))
+        }
+
+        if (path.isBlank()) {
+            return Result.failure(IllegalArgumentException("file.write requires a non-empty path"))
+        }
+
+        val target = try {
+            File(path).canonicalFile
+        } catch (e: Exception) {
+            return Result.failure(e)
+        }
+        val inside = authorisedRoots.any { root ->
+            target.path == root || target.path.startsWith(root + File.separator)
+        }
+        if (!inside) {
+            return Result.failure(IllegalArgumentException(
+                "file.write is authorised only inside the app's private files directory"
+            ))
+        }
+        return try {
+            target.parentFile?.mkdirs()
+            target.writeText(content)
+            Result.success(
+                mapOf(
+                    "path" to target.path,
+                    "content" to content
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun canonicalOrNull(file: File): File? = try {
+        file.canonicalFile
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/** Real Android clipboard writer. Mirrors the NativeTools declaration
+ * `clipboard.write` (REVERSIBLE; write text to the clipboard).
+ */
+class ClipboardWriteTool(private val context: Context) {
+    val tool = Tool(
+        id = "clipboard.write",
+        description = "Write text to the clipboard",
+        category = "system",
+        requiredCapabilities = listOf("clipboard.write"),
+        inputSchema = mapOf("text" to "string"),
+        outputSchema = mapOf("text" to "string"),
+        riskClass = RiskClass.REVERSIBLE,
+        approvalRequired = true,
+        reversible = true,
+        timeoutSeconds = 10,
+        native = true
+    )
+
+    suspend fun execute(text: String): Result<Map<String, Any>> {
+        return try {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.primaryClip = ClipData.newPlainText("aethra", text)
+            Result.success(
+                mapOf(
+                    "text" to text
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+}
+
 /**
  * Real Android clipboard reader. Mirrors the NativeTools declaration
  * `clipboard.read` (READ_ONLY, non-privileged). Reading the focused app's own

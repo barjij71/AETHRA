@@ -193,7 +193,7 @@ class Runtime(private val context: Context) {
         args: Map<String, String> = emptyMap()
     ): Task? {
         val engine = taskEngine ?: return null
-        return engine.create(goal, role, riskClass)
+        return engine.create(goal, role, riskClass, detail = args)
     }
 }
 

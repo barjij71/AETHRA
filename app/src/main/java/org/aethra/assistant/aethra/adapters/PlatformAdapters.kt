@@ -15,8 +15,10 @@ import org.aethra.assistant.aethra.tools.AndroidCapabilityProvider
 import org.aethra.assistant.aethra.tools.AppLaunchTool
 import org.aethra.assistant.aethra.tools.AppQueryTool
 import org.aethra.assistant.aethra.tools.ClipboardReadTool
+import org.aethra.assistant.aethra.tools.ClipboardWriteTool
 import org.aethra.assistant.aethra.tools.DeviceInfoTool
 import org.aethra.assistant.aethra.tools.FileReadTool
+import org.aethra.assistant.aethra.tools.FileWriteTool
 import org.aethra.core.agents.AgentEngine
 import org.aethra.core.agents.AgentPersistence
 import org.aethra.core.memory.MemoryEngine
@@ -176,7 +178,9 @@ class PlatformAdapters(private val context: Context) {
         toolRegistry.register(AppLaunchTool(context).tool)
         toolRegistry.register(AppQueryTool(context).tool)
         toolRegistry.register(FileReadTool(context).tool)
+        toolRegistry.register(FileWriteTool(context).tool)
         toolRegistry.register(ClipboardReadTool(context).tool)
+        toolRegistry.register(ClipboardWriteTool(context).tool)
         toolRegistry.register(
             org.aethra.core.tools.Tool(
                 id = "memory.remember",
@@ -278,7 +282,20 @@ class PlatformAdapters(private val context: Context) {
                 "app.launch" -> AppLaunchTool(adapters.context).execute(toolArgs(tool, goal)["package"] ?: "")
                 "app.query" -> AppQueryTool(adapters.context).execute(toolArgs(tool, goal)["query"] ?: "")
                 "file.read" -> FileReadTool(adapters.context).execute(toolArgs(tool, goal)["path"] ?: "")
+                "file.write" -> {
+                    val path = task.detail["path"] ?: ""
+                    val content = task.detail["content"] ?: ""
+                    FileWriteTool(adapters.context).execute(path, content)
+                }
                 "clipboard.read" -> ClipboardReadTool(adapters.context).execute()
+                "clipboard.write" -> {
+                    val text = task.detail["text"] ?: goal.removePrefix(tool.id).trim()
+                    if (text.isEmpty()) {
+                        Result.failure(IllegalArgumentException("clipboard.write requires non-empty text"))
+                    } else {
+                        ClipboardWriteTool(adapters.context).execute(text)
+                    }
+                }
                 "memory.remember" -> {
                     val text = goal.removePrefix(tool.id).trim()
                     if (text.isEmpty()) {
