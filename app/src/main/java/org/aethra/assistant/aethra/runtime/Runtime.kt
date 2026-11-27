@@ -24,6 +24,7 @@ import org.aethra.core.storage.Storage
 import org.aethra.core.task.Task
 import org.aethra.core.task.TaskEngine
 import org.aethra.core.tools.ToolRegistry
+import org.aethra.core.workflow.WorkflowEngine
 import org.aethra.core.skills.SkillRegistry
 
 class Runtime(private val context: Context) {
@@ -162,6 +163,8 @@ class Runtime(private val context: Context) {
         get() = registry?.storage
     val taskEngine: TaskEngine?
         get() = registry?.taskEngine
+    val workflowEngine: WorkflowEngine?
+        get() = registry?.workflowEngine
     val memoryEngine
         get() = registry?.memoryEngine
     val toolRegistry: ToolRegistry?

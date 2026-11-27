@@ -12,6 +12,7 @@ import org.aethra.core.task.ProviderTaskRunner
 import org.aethra.core.task.TaskScheduler
 import org.aethra.core.task.TaskPersistence
 import org.aethra.core.tools.ToolRegistry
+import org.aethra.core.workflow.WorkflowEngine
 import org.aethra.core.providers.ProviderSystem
 import org.aethra.core.providers.ProviderRegistry
 import org.aethra.core.providers.ModelRegistry
@@ -76,10 +77,24 @@ class CoreRegistry(
         maxConcurrent = config.maxConcurrentTasks
     )
 
+    /** Core-owned workflow orchestration. Created after taskEngine since it depends
+     * on the task execution authority. Uses the same effective TaskRunner as taskEngine. */
+    val workflowEngine = WorkflowEngine(
+        storage = storage,
+        eventBus = eventBus,
+        taskEngine = taskEngine,
+        taskRunner = taskRunner ?: ProviderTaskRunner(
+            router = providerModelRouter,
+            providerRegistry = providerRegistry,
+            auditLog = auditLog
+        )
+    )
+
     fun get(name: String): Any? = when (name) {
         "config" -> config
         "storage" -> storage
         "taskEngine" -> taskEngine
+        "workflowEngine" -> workflowEngine
         "memoryEngine" -> memoryEngine
         "toolRegistry" -> toolRegistry
         "providerSystem" -> providerSystem
