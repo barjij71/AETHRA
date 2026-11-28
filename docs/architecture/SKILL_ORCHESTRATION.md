@@ -46,3 +46,14 @@ A future three-skill integration test must prove:
 ## Android lifecycle
 
 Durable workflow state must survive process death. Android scheduling/resource limits are execution concerns; they must not move policy authority out of Core.
+
+
+## Implemented Core execution bridge
+
+The current implementation binds an optional `SkillExecutionSpec` to an AETHRA `Task`. The existing `TaskEngine` remains the owner of scheduling, dependency gating, retry, cancellation, persistence, and execution lifecycle.
+
+`SkillTaskRunner` adapts that Task boundary to `SkillExecutionEngine`. The adapter cannot bypass registry trust/activation or artifact schema validation. Skill bindings are persisted with the task journal so a process restart does not silently discard the selected skill contract.
+
+This is an execution bridge, not a replacement scheduler: workflow dependency/concurrency decisions remain in `WorkflowEngine`/TaskEngine.
+
+The bridge is covered by a Core test that creates a skill-bound Task through `TaskEngine` and verifies that the normal TaskRunner boundary produces a schema-validated artifact without a model provider or network call.
