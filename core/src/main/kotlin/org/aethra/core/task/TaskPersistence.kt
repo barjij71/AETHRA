@@ -29,6 +29,7 @@ class TaskPersistence(private val storage: Storage) {
                 role = task.role,
                 riskClass = task.riskClass.name,
                 dependsOn = task.dependsOn,
+                skillExecutionSpec = task.skillExecutionSpec,
                 createdAt = task.createdAt,
                 updatedAt = task.updatedAt,
                 state = task.state.name,
@@ -61,7 +62,8 @@ class TaskPersistence(private val storage: Storage) {
                     goal = snapshot.goal,
                     role = snapshot.role,
                     riskClass = RiskClass.valueOf(snapshot.riskClass),
-                    dependsOn = snapshot.dependsOn
+                    dependsOn = snapshot.dependsOn,
+                    skillExecutionSpec = snapshot.skillExecutionSpec
                 )
                 task.restore(
                     persistedId = snapshot.id,
@@ -111,6 +113,7 @@ private data class PersistedTask(
     val role: String,
     val riskClass: String,
     val dependsOn: List<String>,
+    val skillExecutionSpec: org.aethra.core.skills.SkillExecutionSpec? = null,
     val createdAt: Long,
     val updatedAt: Long,
     val state: String,
