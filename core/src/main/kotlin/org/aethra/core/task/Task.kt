@@ -2,6 +2,7 @@ package org.aethra.core.task
 
 import org.aethra.core.domain.RiskClass
 import org.aethra.core.domain.TaskState
+import org.aethra.core.skills.SkillExecutionSpec
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -11,6 +12,7 @@ class Task(
     role: String = "assistant",
     riskClass: RiskClass = RiskClass.READ_ONLY,
     dependsOn: List<String> = emptyList(),
+    val skillExecutionSpec: SkillExecutionSpec? = null,
     var onCompleted: (Task) -> Unit = {}
 ) {
     var id: String = UUID.randomUUID().toString()
