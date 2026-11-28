@@ -5,7 +5,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import org.aethra.core.domain.RiskClass
-import org.aethra.core.task.Task
 import org.aethra.core.task.TaskEngine
 import org.aethra.core.runtime.events.EventBus
 
@@ -60,7 +59,7 @@ class SkillTaskRunnerTest {
             maxConcurrent = 1
         )
 
-        val task = Task(
+        val task = taskEngine.create(
             goal = "execute skill-a",
             riskClass = RiskClass.READ_ONLY,
             skillExecutionSpec = SkillExecutionSpec(
@@ -72,7 +71,6 @@ class SkillTaskRunnerTest {
             )
         )
 
-        taskEngine.register(task)
         taskEngine.run(task.id)
 
         while (taskEngine.getTask(task.id)?.state !in setOf(
