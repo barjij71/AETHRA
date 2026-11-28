@@ -78,9 +78,10 @@ class TaskEngine(
         goal: String,
         role: String = "assistant",
         riskClass: RiskClass = RiskClass.READ_ONLY,
-        dependsOn: List<String> = emptyList()
+        dependsOn: List<String> = emptyList(),
+        skillExecutionSpec: org.aethra.core.skills.SkillExecutionSpec? = null
     ): Task {
-        val task = Task(goal, role, riskClass, dependsOn)
+        val task = Task(goal, role, riskClass, dependsOn, skillExecutionSpec = skillExecutionSpec)
         synchronized(lock) {
             require(dependsOn.all { tasks.containsKey(it) }) {
                 "Task dependency not found"
