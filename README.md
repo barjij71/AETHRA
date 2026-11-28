@@ -13,7 +13,7 @@ Verification + Device Mesh + Voice + Holographic UX.
 - CoreRegistry: registre des composants
 - CoreRuntime: moteur d'ex??cution et cycle de vie
 - TaskEngine: machine ?? ??tats, d??pendances, retry, idempotence
-- PermissionBroker: politiques SAFE/LOW/SENSITIVE/DESTRUCTIVE
+- PermissionBroker: policies READ_ONLY/REVERSIBLE/SENSITIVE/DESTRUCTIVE
 - EventBus: bus d'??v??nements avec historique
 - MemoryEngine: m??moires layer??es (conversation, working, task, etc.)
 - VerificationEngine: evidence, postconditions, REA model
